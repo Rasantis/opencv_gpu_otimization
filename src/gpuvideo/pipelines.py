@@ -35,12 +35,14 @@ _CODEC = {
 }
 
 _RTSP_RE = re.compile(r"^rtsp://", re.I)
+_RTMP_RE = re.compile(r"^rtmps?://", re.I)
 _HTTP_RE = re.compile(r"^https?://", re.I)
 
 
 class SourceKind:
     FILE = "file"
     RTSP = "rtsp"
+    RTMP = "rtmp"
     HTTP = "http"
     CAMERA = "camera"
     TEST = "test"
@@ -55,6 +57,8 @@ def classify_source(source) -> str:
         return SourceKind.TEST
     if _RTSP_RE.match(s):
         return SourceKind.RTSP
+    if _RTMP_RE.match(s):
+        return SourceKind.RTMP
     if _HTTP_RE.match(s):
         return SourceKind.HTTP
     if s.startswith("/dev/video") or s.isdigit():
@@ -162,6 +166,13 @@ def build_pipeline(
         return (f"rtspsrc location={source} latency={rtsp_latency_ms} "
                 f"protocols={rtsp_protocols} ! "
                 f"{depay} ! {dec} ! {convert} ! {sink}")
+
+    if kind == SourceKind.RTMP:
+        c = codec or "h264"
+        dec = _decode_chain(c, engine)
+        # FLV carrega audio+video; flvdemux liga o pad de video por caps.
+        return (f"rtmp2src location={source} ! flvdemux ! {dec} ! "
+                f"{convert} ! {sink}")
 
     # ---- arquivo (e http como uri) ----
     if kind == SourceKind.HTTP:

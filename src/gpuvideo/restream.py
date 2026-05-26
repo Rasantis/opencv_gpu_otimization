@@ -23,7 +23,7 @@ def _nvenc(codec: str, bitrate_kbps: int, gop: int, low_latency: bool) -> str:
     enc = "nvh264enc" if codec == "h264" else "nvh265enc"
     if low_latency:
         return (f"{enc} preset=low-latency-hq rc-mode=cbr bitrate={bitrate_kbps} "
-                f"gop-size={gop} bframes=0 ! video/x-{codec},profile=main")
+                f"gop-size={gop} bframes=0")
     return f"{enc} bitrate={bitrate_kbps} gop-size={gop}"
 
 
@@ -42,6 +42,8 @@ def _ingest_decoded(source) -> str:
     if kind == SourceKind.RTSP:
         return (f"rtspsrc location={source} protocols=tcp latency=100 ! "
                 f"rtph264depay ! h264parse ! nvh264dec")
+    if kind == SourceKind.RTMP:
+        return f"rtmp2src location={source} ! flvdemux ! h264parse ! nvh264dec"
     if kind == SourceKind.TEST:
         return ("videotestsrc is-live=true ! "
                 "video/x-raw,width=1280,height=720,framerate=30/1 ! timeoverlay")

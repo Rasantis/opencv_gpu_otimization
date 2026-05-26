@@ -31,6 +31,30 @@ com baixíssima latência, escalável e de baixo custo.
 | **Custo baixo** | NVDEC/NVENC liberam a CPU (ver YOLO: 9% CPU); menos vCPU/instâncias; MediaMTX é 1 binário |
 | **Integração fácil** | front é uma tag `<video>` + WebRTC/HLS; sem SDK proprietário (ver `web/index.html`) |
 
+## Testar localmente (sem Docker)
+
+Sobe MediaMTX + uma câmera simulada + o worker, e mostra as URLs pro navegador:
+
+```bash
+./examples/local_stack.sh                      # câmera sintética contínua
+./examples/local_stack.sh video.mp4            # usa um arquivo
+SOURCE="rtsp://cam/stream" ./examples/local_stack.sh   # câmera REAL
+INFER=1 ./examples/local_stack.sh              # com detecções YOLO11
+```
+Abra `web/index.html` (host=`http://localhost`, path=`cam1`) ou
+`http://localhost:8889/cam1` (WebRTC).
+
+Frame capturado de uma câmera (vídeo 4K) passando por **toda a cadeia de
+restream** (câmera → MediaMTX → worker NVDEC→NVENC → MediaMTX → leitura):
+
+![restream end-to-end](restream_demo.jpg)
+
+> ⚠️ **Simular câmera com um arquivo**: re-encode o vídeo (decode→NVENC), como
+> faz o `local_stack.sh` — um encoder ao vivo de verdade. Empurrar o H.264 do
+> arquivo **por passthrough** (`h264parse ! flvmux`) pode chegar sem croma
+> (verde) por uma incompatibilidade do stream pré-codificado no RTMP; câmeras
+> reais (encoder ao vivo) não têm esse problema.
+
 ## Subir (Docker)
 
 Pré-requisitos no host: driver NVIDIA + **NVIDIA Container Toolkit** (`nvidia-ctk`).

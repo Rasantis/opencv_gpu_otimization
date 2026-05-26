@@ -230,17 +230,25 @@ baixíssima latência. Guia completo: [docs/DEPLOY.md](docs/DEPLOY.md).
 - **MediaMTX** faz o fan-out p/ N viewers (WebRTC sub-segundo / LL-HLS via CDN).
 - **Front** = uma tag `<video>` ([web/index.html](web/index.html)), sem SDK.
 
+![restream end-to-end](docs/restream_demo.jpg)
+
 ```bash
+# teste local completo (sobe MediaMTX + câmera sim + worker, mostra as URLs):
+./examples/local_stack.sh                 # ou: SOURCE=rtsp://cam ./examples/local_stack.sh
+
+# Docker (produção):
 cd deploy && SOURCE="rtsp://cam/stream" docker compose up --build
 #  WebRTC: http://HOST:8889/cam1   |   LL-HLS: http://HOST:8888/cam1/index.m3u8
 
-# ou direto (sem docker):
+# ou o worker direto:
 gpuvideo restream rtsp://cam rtmp://HOST:1935/cam1            # transcode 100% GPU
-gpuvideo restream rtsp://cam rtmp://HOST:1935/cam1 --infer    # com detecções YOLO11
+gpuvideo restream rtmp://cam rtmp://HOST:1935/cam1 --infer    # com detecções YOLO11
 ```
 
-Glass-to-glass **~0.3-0.6 s** via WebRTC; uma RTX 3050 transcodifica vários
-1080p30 simultâneos. Validado localmente: push → MediaMTX → leitura a 30 fps.
+Fontes aceitas: **RTSP, RTMP, SRT, HTTP, arquivo, câmera**. Glass-to-glass
+**~0.3-0.6 s** via WebRTC; uma RTX 3050 transcodifica vários 1080p30 simultâneos.
+**Validado localmente**: câmera 4K → MediaMTX → worker (NVDEC→NVENC) → leitura
+em cores a 30 fps; HLS + WebRTC servindo. Detalhes em [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ---
 
