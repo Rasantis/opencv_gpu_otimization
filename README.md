@@ -227,6 +227,43 @@ pip install -e . --no-deps           # gpuvideo
 
 ---
 
+## Analytics: tracking + soluções (contagem / permanência / heatmap / invasão)
+
+[`gpuvideo.analytics`](src/gpuvideo/analytics.py) junta **YOLO11 + ByteTrack**
+(rastreamento de IDs) a **soluções plugáveis**. Decodifica na GPU, rastreia, e
+cada solução emite **eventos** (JSON) + desenha sua camada — pronto pra alimentar
+dashboards/alertas. Coords **normalizadas** (0-1) → independentes de resolução.
+
+![analytics ao vivo](docs/analytics_demo.jpg)
+
+```python
+from gpuvideo.analytics import VideoAnalytics, LineCounter, IntrusionZone, Heatmap, DwellZone
+
+va = (VideoAnalytics("rtsp://cam", model="yolo11n.pt", classes=["person"])
+      .add(LineCounter([(0,0.55),(1,0.55)], name="fluxo"))            # contagem IN/OUT
+      .add(DwellZone([(0.6,0.3),(1,0.3),(1,1),(0.6,1)], name="fila", alert_s=5))  # permanência
+      .add(IntrusionZone([(0,0.25),(0.3,0.25),(0.3,1),(0,1)], name="restrito",     # invasão
+                         on_alert=lambda e: print("ALERTA", e)))
+      .add(Heatmap()))                                                 # mapa de calor
+for frame, tracks, events in va.run():
+    for e in events: enviar_para_o_bus(e)   # frame = numpy anotado p/ exibir/restream
+```
+
+| solução | classe | evento emitido |
+|---|---|---|
+| Contagem por linha | `LineCounter` | `count_in` / `count_out` |
+| Tempo de permanência | `DwellZone` | `dwell_alert` / `dwell_exit` (com `dwell_s`) |
+| Mapa de calor | `Heatmap` | — (overlay acumulado) |
+| Detecção de invasão | `IntrusionZone` | `intrusion` (+ callback de alerta) |
+
+```bash
+# demo ao vivo (janela ou --record), com HUD + log de eventos:
+.venv-yolo/bin/python examples/analytics_live.py video.mp4   # ou webcam / rtsp://
+```
+Validado no vídeo de rua: tracking por ID, 14 alertas de invasão, contagem e
+dwell disparando. É a base p/ escalar (multi-modelo/multi-solução) — ver
+[docs/SCALING.md](docs/SCALING.md).
+
 ## Deploy: restreaming em tempo real
 
 Ingerir uma transmissão, processar na GPU e **re-transmitir** pro front com
