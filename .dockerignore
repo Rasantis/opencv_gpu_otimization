@@ -1,0 +1,19 @@
+.git
+.venv
+.venv-yolo
+venv
+**/__pycache__
+*.pyc
+dist
+build
+*.egg-info
+src/*.egg-info
+# vídeos e modelos pesados (não vão pra imagem)
+*.mp4
+*.mkv
+*.mov
+*.webm
+*.ts
+*.pt
+results
+docs/*.jpg

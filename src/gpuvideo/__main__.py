@@ -43,6 +43,16 @@ def _cmd_transcode(a):
                         gpu_index=a.gpu)
 
 
+def _cmd_restream(a):
+    from .restream import Restreamer
+    r = Restreamer(a.source, a.out, codec_out=a.codec, bitrate_kbps=a.bitrate,
+                   gop=a.gop, low_latency=not a.no_low_latency, protocol=a.protocol,
+                   infer=a.infer, model=a.model, imgsz=a.imgsz, device=a.device)
+    print(f"Restream: {a.source} -> {a.out} | {a.protocol}/{a.codec} "
+          f"{a.bitrate}k | infer={a.infer}")
+    r.run()
+
+
 def _cmd_scale(a):
     from .multistream import MultiStream
     ms = MultiStream.replicate(a.source, a.n, mode=a.mode)
@@ -84,6 +94,20 @@ def main(argv=None):
     t.add_argument("--preset", default="medium")
     t.add_argument("--gpu", type=int, default=0)
     t.set_defaults(func=_cmd_transcode)
+
+    rs = sub.add_parser("restream", help="restream baixa-latência (-> RTMP/SRT, ex.: MediaMTX)")
+    rs.add_argument("source", help="rtsp://, http://, arquivo, indice de camera ou 'test'")
+    rs.add_argument("out", help="URL de saida (ex.: rtmp://mediamtx:1935/cam1)")
+    rs.add_argument("--codec", default="h264", choices=["h264", "h265"])
+    rs.add_argument("--bitrate", type=int, default=4000)
+    rs.add_argument("--gop", type=int, default=30)
+    rs.add_argument("--protocol", default="rtmp", choices=["rtmp", "srt"])
+    rs.add_argument("--no-low-latency", action="store_true")
+    rs.add_argument("--infer", action="store_true", help="desenha deteccoes YOLO11")
+    rs.add_argument("--model", default="yolo11n.pt")
+    rs.add_argument("--imgsz", type=int, default=640)
+    rs.add_argument("--device", default="0")
+    rs.set_defaults(func=_cmd_restream)
 
     s = sub.add_parser("scale", help="teste de escala (N streams)")
     s.add_argument("source")

@@ -133,6 +133,7 @@ def build_pipeline(
     drop: bool = False,
     convert_threads: int = 4,
     rtsp_latency_ms: int = 100,
+    rtsp_protocols: str = "tcp",
     for_opencv: bool = False,
 ) -> str:
     """Monta a string de pipeline GStreamer terminando em ``appsink``."""
@@ -157,7 +158,9 @@ def build_pipeline(
         parse, gpu_dec, cpu_dec = _CODEC[c]
         depay = "rtph264depay" if c == "h264" else "rtph265depay"
         dec = _decode_chain(c, engine)
-        return (f"rtspsrc location={source} latency={rtsp_latency_ms} ! "
+        # protocols=tcp: robusto p/ cameras IP e evita problemas de UDP/IPv6.
+        return (f"rtspsrc location={source} latency={rtsp_latency_ms} "
+                f"protocols={rtsp_protocols} ! "
                 f"{depay} ! {dec} ! {convert} ! {sink}")
 
     # ---- arquivo (e http como uri) ----

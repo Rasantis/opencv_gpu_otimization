@@ -1,0 +1,50 @@
+# Deploy: MediaMTX (borda/fan-out) + worker(s) gpuvideo (decode+infer+encode na GPU).
+#
+#   cd deploy && SOURCE="rtsp://usuario:senha@camera/stream" docker compose up --build
+#
+# Front: WebRTC  http://HOST:8889/cam1   |   LL-HLS  http://HOST:8888/cam1
+# (ou abra web/index.html apontando pra HOST)
+#
+# network_mode: host simplifica o WebRTC (ICE) e o worker->mediamtx em localhost.
+# Para multi-host, troque por portas expostas + webrtcAdditionalHosts no mediamtx.yml.
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+
+  restreamer:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        WITH_YOLO: "1"          # 0 = imagem enxuta só de transcode
+    image: gpuvideo:latest
+    container_name: gpuvideo-restreamer
+    restart: unless-stopped
+    network_mode: host
+    depends_on: [mediamtx]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    # decode na GPU -> (YOLO opcional) -> NVENC low-latency -> RTMP -> MediaMTX
+    command: >
+      restream ${SOURCE:-test} rtmp://127.0.0.1:1935/cam1
+      --bitrate ${BITRATE:-4000} --gop ${GOP:-30}
+    # para detecção YOLO no stream, troque o command acima por:
+    #   restream ${SOURCE:-test} rtmp://127.0.0.1:1935/cam1 --infer
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, video]
+
+  # Escala: replique o worker para mais câmeras (cada um com seu path).
+  # restreamer-cam2:
+  #   <<: *restreamer-base
+  #   command: restream rtsp://camera2/stream rtmp://127.0.0.1:1935/cam2

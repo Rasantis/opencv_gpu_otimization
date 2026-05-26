@@ -1,0 +1,33 @@
+# Config mínima do MediaMTX para baixa latência.
+# Servidor de borda: ingere RTMP/SRT do worker e faz fan-out em WebRTC / LL-HLS.
+
+# --- Ingest (o worker gpuvideo publica aqui) ---
+rtmp: yes
+rtmpAddress: :1935
+srt: yes
+srtAddress: :8890
+rtsp: yes                      # também serve RTSP (debug / outros workers)
+
+# --- WebRTC: menor latência (sub-segundo), ideal pro front em tempo real ---
+webrtc: yes
+webrtcAddress: :8889
+# Em produção multi-host, liste o IP público p/ o ICE funcionar atrás de NAT:
+# webrtcAdditionalHosts: [SEU_IP_PUBLICO]
+# webrtcICEServers2:
+#   - url: stun:stun.l.google.com:19302
+
+# --- LL-HLS: escalável/CDN-friendly (~1-3s), fallback universal ---
+hls: yes
+hlsAddress: :8888
+hlsVariant: lowLatency
+hlsAlwaysRemux: yes
+hlsSegmentCount: 7
+hlsSegmentDuration: 200ms
+hlsPartDuration: 200ms
+
+# Caminhos criados sob demanda quando o worker publica (ex.: /cam1).
+pathDefaults:
+  # mantém a sessão pronta mesmo sem leitores conectados
+  runOnDemandCloseAfter: 0s
+paths:
+  all_others:

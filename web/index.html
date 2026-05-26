@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gpuvideo — player (WebRTC / HLS)</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; font-family: system-ui, sans-serif; background:#0e0e12; color:#e8e8ea; }
+  header { padding:14px 20px; background:#16161d; border-bottom:1px solid #26262e; }
+  h1 { font-size:18px; margin:0; } small { color:#9a9aa6; }
+  .wrap { max-width:1000px; margin:18px auto; padding:0 16px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+  input { background:#1c1c25; border:1px solid #33333f; color:#e8e8ea; padding:8px 10px; border-radius:8px; }
+  button { background:#2e7d32; color:#fff; border:0; padding:9px 16px; border-radius:8px; cursor:pointer; font-weight:600; }
+  button.alt { background:#37474f; }
+  video { width:100%; background:#000; border-radius:10px; aspect-ratio:16/9; }
+  #status { margin-top:10px; color:#7fd18a; font-variant-numeric:tabular-nums; }
+  code { background:#1c1c25; padding:2px 6px; border-radius:6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>gpuvideo — live player</h1>
+  <small>WebRTC (sub-segundo) com fallback LL-HLS · servido pelo MediaMTX</small>
+</header>
+<div class="wrap">
+  <div class="row">
+    <input id="host" value="http://localhost" size="22" title="host do MediaMTX">
+    <input id="path" value="cam1" size="10" title="path/stream">
+    <button onclick="playWebRTC()">▶ WebRTC</button>
+    <button class="alt" onclick="playHLS()">▶ HLS</button>
+    <button class="alt" onclick="stop()">■ parar</button>
+  </div>
+  <video id="v" autoplay muted playsinline controls></video>
+  <div id="status">pronto.</div>
+  <p><small>Integração no seu front: copie <code>playWebRTC()</code> abaixo, ou use
+     a tag <code>&lt;video&gt;</code> com o stream MediaMTX. WebRTC = menor latência;
+     HLS = mais escalável/CDN.</small></p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script>
+const v = document.getElementById('v');
+const st = (m) => document.getElementById('status').textContent = m;
+let pc = null, hls = null;
+const base = () => document.getElementById('host').value.replace(/\/$/, '');
+const path = () => document.getElementById('path').value;
+
+function stop() {
+  if (pc) { pc.close(); pc = null; }
+  if (hls) { hls.destroy(); hls = null; }
+  v.srcObject = null; v.removeAttribute('src'); st('parado.');
+}
+
+// --- WebRTC via WHEP (padrão do MediaMTX, porta 8889) ---
+async function playWebRTC() {
+  stop();
+  st('negociando WebRTC...');
+  pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+  pc.addTransceiver('video', { direction: 'recvonly' });
+  pc.addTransceiver('audio', { direction: 'recvonly' });
+  pc.ontrack = (e) => { v.srcObject = e.streams[0]; st('▶ WebRTC ao vivo (' + path() + ')'); };
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  const url = base().replace(/:\d+$/, '') + ':8889/' + path() + '/whep';
+  try {
+    const res = await fetch(url, { method: 'POST',
+      headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    await pc.setRemoteDescription({ type: 'answer', sdp: await res.text() });
+  } catch (e) { st('WebRTC falhou: ' + e.message + ' — tente HLS'); }
+}
+
+// --- LL-HLS (porta 8888) ---
+function playHLS() {
+  stop();
+  const url = base().replace(/:\d+$/, '') + ':8888/' + path() + '/index.m3u8';
+  if (v.canPlayType('application/vnd.apple.mpegurl')) {       // Safari
+    v.src = url; st('▶ HLS (nativo)');
+  } else if (window.Hls && Hls.isSupported()) {
+    hls = new Hls({ lowLatencyMode: true, liveSyncDuration: 0.5 });
+    hls.loadSource(url); hls.attachMedia(v); st('▶ HLS (hls.js, low-latency)');
+  } else { st('HLS não suportado neste navegador'); }
+}
+</script>
+</body>
+</html>

@@ -216,6 +216,34 @@ pip install -e . --no-deps           # gpuvideo
 
 ---
 
+## Deploy: restreaming em tempo real
+
+Ingerir uma transmissão, processar na GPU e **re-transmitir** pro front com
+baixíssima latência. Guia completo: [docs/DEPLOY.md](docs/DEPLOY.md).
+
+```
+[Câmera RTSP] ─► NVDEC ─► (YOLO opcional) ─► NVENC low-latency ─RTMP─► MediaMTX ─► WebRTC ─► <video>
+                └──── worker gpuvideo (GPU, stateless) ────┘         (fan-out)    LL-HLS ─► hls.js
+```
+
+- **Worker** stateless (1 por câmera) → escala horizontal; NVDEC/NVENC liberam a CPU.
+- **MediaMTX** faz o fan-out p/ N viewers (WebRTC sub-segundo / LL-HLS via CDN).
+- **Front** = uma tag `<video>` ([web/index.html](web/index.html)), sem SDK.
+
+```bash
+cd deploy && SOURCE="rtsp://cam/stream" docker compose up --build
+#  WebRTC: http://HOST:8889/cam1   |   LL-HLS: http://HOST:8888/cam1/index.m3u8
+
+# ou direto (sem docker):
+gpuvideo restream rtsp://cam rtmp://HOST:1935/cam1            # transcode 100% GPU
+gpuvideo restream rtsp://cam rtmp://HOST:1935/cam1 --infer    # com detecções YOLO11
+```
+
+Glass-to-glass **~0.3-0.6 s** via WebRTC; uma RTX 3050 transcodifica vários
+1080p30 simultâneos. Validado localmente: push → MediaMTX → leitura a 30 fps.
+
+---
+
 ## CLI
 
 Após instalar, o comando `gpuvideo` fica disponível (equivale a `python -m gpuvideo`):
