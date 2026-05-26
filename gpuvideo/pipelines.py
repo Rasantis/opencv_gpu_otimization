@@ -28,7 +28,7 @@ _CODEC = {
     "h265": ("h265parse", "nvh265dec", "avdec_h265"),
     "hevc": ("h265parse", "nvh265dec", "avdec_h265"),
     "vp8":  ("",          "nvvp8dec", "avdec_vp8"),
-    "vp9":  ("",          "nvvp9dec", "avdec_vp9"),
+    "vp9":  ("vp9parse",  "nvvp9dec", "avdec_vp9"),
     "av1":  ("av1parse",  "nvav1dec", "av1dec"),
     "mpeg2": ("mpegvideoparse", "nvmpeg2videodec", "avdec_mpeg2video"),
     "jpeg": ("jpegparse", "nvjpegdec", "jpegdec"),
@@ -80,12 +80,14 @@ def discover_codec(path: str) -> Optional[str]:
         for stream in info.get_video_streams():
             caps = stream.get_caps()
             name = caps.get_structure(0).get_name() if caps else ""
-            # ex.: "video/x-h264" -> "h264"
+            # ex.: "video/x-h264" -> "h264" ; "image/jpeg" -> "jpeg"
             short = name.split("/")[-1].replace("x-", "")
+            # Normalizacoes de nomes de caps -> chave de _CODEC.
+            alias = {"hevc": "h265", "mpeg": "mpeg2", "mpeg2video": "mpeg2",
+                     "mjpeg": "jpeg", "motionjpeg": "jpeg"}
+            short = alias.get(short, short)
             if short in _CODEC:
                 return short
-            if short in ("h265", "hevc"):
-                return "h265"
     except Exception:
         pass
     return None

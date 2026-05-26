@@ -164,6 +164,31 @@ filesrc ! qtdemux ! h264parse ! nvh264dec ! cudadownload ! videoconvert ! video/
 
 ---
 
+## Codecs e formatos suportados
+
+Decode por **NVDEC** (GPU) com fallback **libav/FFmpeg** (CPU). Detecção de codec
+automática (GstDiscoverer) e demuxer por container. Matriz **verificada
+end-to-end** por [`test_codecs.py`](test_codecs.py) — todos os codecs lidos com
+sucesso pelos 5 caminhos (gst-gpu, gst-cpu, opencv-cpu, opencv-gpu, opencv-cuda):
+
+| codec | detecção | NVDEC (GPU) | libav (CPU) | cudacodec |
+|---|---|---|---|---|
+| H.264/AVC | ✅ | `nvh264dec` | `avdec_h264` | ✅ |
+| H.265/HEVC | ✅ | `nvh265dec` | `avdec_h265` | ✅ |
+| VP8 | ✅ | `nvvp8dec` | `avdec_vp8` | ✅ |
+| VP9 | ✅ | `nvvp9dec` | `avdec_vp9` | ✅ |
+| AV1 | ✅ | `nvav1dec` | `av1dec` | ✅ |
+| MPEG-2 | ✅ | `nvmpeg2videodec` | `avdec_mpeg2video` | ✅ |
+| MJPEG | ✅ | `nvjpegdec` | `jpegdec` | ✅ |
+
+**Containers**: MP4/MOV/M4V/3GP (`qtdemux`), MKV/WebM (`matroskademux`),
+MPEG-TS (`tsdemux`), AVI (`avidemux`), FLV (`flvdemux`). Também: arquivos,
+RTSP (`rtsp://`), HTTP (`http(s)://`), câmera (índice ou `/dev/videoN`).
+
+> ⚠️ O NVDEC decodifica **4:2:0 8-bit**; conteúdo 4:2:2/4:4:4 não é suportado
+> pelo hardware (cai no fallback de CPU). Confirme no *Support Matrix* da sua GPU.
+> Rode `python3 test_codecs.py` para validar na sua máquina.
+
 ## Resultados (suíte consolidada)
 
 ### 1) Captura → numpy — 1080p, conteúdo pesado, `op=light`
