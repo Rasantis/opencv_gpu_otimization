@@ -18,6 +18,11 @@ def _cmd_doctor(a):
     return doctor()
 
 
+def _cmd_analytics(a):
+    from .pipeline import run_cameras
+    run_cameras(a.config, seconds=a.seconds)
+
+
 def _cmd_gen(a):
     from .make_test_video import make_test_video
     out = make_test_video(a.output, resolution=a.res, frames=a.frames,
@@ -76,6 +81,11 @@ def main(argv=None):
 
     d = sub.add_parser("doctor", help="checa o ambiente (deps, GStreamer, GPU, YOLO)")
     d.set_defaults(func=_cmd_doctor)
+
+    an = sub.add_parser("analytics", help="roda múltiplas câmeras de um YAML (1 solução cada)")
+    an.add_argument("config", help="arquivo YAML de câmeras (ver examples/cameras.yaml)")
+    an.add_argument("--seconds", type=float, default=None, help="duração (padrão: até o fim)")
+    an.set_defaults(func=_cmd_analytics)
 
     g = sub.add_parser("gen", help="gera video de teste via NVENC")
     g.add_argument("output")

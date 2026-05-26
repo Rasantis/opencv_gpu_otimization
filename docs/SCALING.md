@@ -150,9 +150,10 @@ GPU saturada). Tracing distribuído nos eventos (câmera → detecção → aler
 
 ## 7. Próximos passos no `gpuvideo` (priorizados)
 
-1. **Tracking** (ByteTrack via `model.track()`) — base de todas as soluções.
-2. **Interface `Solution`** + os 5 módulos (counting, dwell, heatmap, intrusion, flow).
-3. **Config declarativa por câmera** (YAML) + runner multi-câmera.
+1. ✅ **Tracking** (ByteTrack + rastro/trail por ID) — base de todas as soluções.
+2. ✅ **Interface `Solution`** + módulos (counting, dwell, heatmap, intrusion).
+3. ✅ **Config declarativa por câmera** (YAML) + runner multi-câmera (`gpuvideo analytics`).
+   + ✅ **keep-on-GPU** (cudacodec + resize na GPU) → event-only ~120 fps/câmera.
 4. **Export TensorRT** + caminho de inferência FP16/INT8.
 5. **Inferência em batch** (N câmeras → 1 chamada) — via Triton client ou batch local.
 6. **Saída de eventos** (JSON) num barramento (NATS/Redis) — não só vídeo.

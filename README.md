@@ -258,11 +258,36 @@ for _frame, tracks, events in va.run():
 | Mapa de calor | `Heatmap` | — (overlay acumulado) |
 | Detecção de invasão | `IntrusionZone` | `intrusion` (+ callback de alerta) |
 
+Rastreamento mostra o **rastro (trail)** de cada track (ByteTrack), com cor por ID.
+
 ```bash
 # uma solução por vídeo; --no-annotate = produção (FPS cheio); janela = ao vivo
 .venv-yolo/bin/python examples/analytics_live.py video.mp4 --solution intrusion
 .venv-yolo/bin/python examples/analytics_live.py video.mp4 --solution counting --no-annotate
 ```
+
+### Multi-câmera por config YAML
+
+Uma câmera = uma entrada no YAML (fonte, modelo, solução). O runner sobe todas
+em **paralelo** (1 thread cada) e agrega os eventos por câmera:
+
+```yaml
+# examples/cameras.yaml
+defaults: {model: yolo11n.pt, classes: [person], proc_max_side: 960, annotate: false}
+cameras:
+  - {id: entrada,  source: rtsp://cam1, solution: {type: counting,  line: [[0,0.55],[1,0.55]]}}
+  - {id: restrito, source: rtsp://cam2, solution: {type: intrusion, zone: [[0,0.25],[0.4,0.25],[0.4,1],[0,1]]}}
+  - {id: fila,     source: rtsp://cam3, model: yolo11s.pt, solution: {type: dwell, zone: [...], alert_s: 8}}
+```
+
+```bash
+gpuvideo analytics examples/cameras.yaml --seconds 20
+#  [entrada] [count_in] ...   [restrito] [intrusion] ...   [fila] [dwell_alert] ...
+#  === resumo por câmera ===  entrada 8 fps | restrito 8 fps | fila 8 fps
+```
+> Validado: 3 câmeras em paralelo, cada uma com sua solução, eventos taggeados
+> por câmera. Cada uma a ~8 fps dividindo uma RTX 3050; pra densidade alta o
+> caminho é **inferência em batch** (1 modelo p/ N câmeras) — [docs/SCALING.md](docs/SCALING.md).
 
 **Performance (vídeo 4K real, RTX 3050, YOLO11n+ByteTrack):**
 event-only **~120 fps** · anotado ao vivo **~67 fps** — ambos ≫ os 25 fps da

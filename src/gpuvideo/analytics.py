@@ -16,10 +16,21 @@ Todas usam coordenadas NORMALIZADAS (0-1) → independentes de resolução.
 from __future__ import annotations
 
 import time
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Sequence, Tuple
 
 import numpy as np
+
+
+_PALETTE = [(0, 255, 255), (255, 0, 255), (0, 255, 0), (255, 128, 0),
+            (0, 128, 255), (255, 255, 0), (128, 0, 255), (0, 255, 128),
+            (255, 0, 128), (60, 220, 255)]
+
+
+def _color_for_id(i: int):
+    """Cor vívida e distinta por track_id (BGR)."""
+    return _PALETTE[i % len(_PALETTE)]
 
 from .env import require_cv2
 
@@ -275,7 +286,7 @@ class VideoAnalytics:
                  imgsz=640, device="0", tracker="bytetrack.yaml",
                  backend="gstreamer", engine="gpu", solutions=None,
                  annotate=True, proc_max_side: Optional[int] = None,
-                 decoder="auto"):
+                 decoder="auto", trails=True, trail_len=30):
         self.source = source
         self.model_name = model
         self.classes = list(classes) if classes else None
@@ -293,10 +304,38 @@ class VideoAnalytics:
         # decoder: "auto" usa cudacodec (NVDEC nativo + resize na GPU, baixa só o
         # frame pequeno -> evita contenção PCIe/CPU do download 4K); senão GStreamer.
         self.decoder = decoder
+        # rastro (trail) do ByteTrack: histórico de posições por track_id.
+        self.trails = trails
+        self.trail_len = trail_len
+        self._trail = defaultdict(lambda: deque(maxlen=trail_len))
+        self._trail_age = {}
 
     def add(self, solution: Solution) -> "VideoAnalytics":
         self.solutions.append(solution)
         return self
+
+    def _update_trails(self, tracks):
+        seen = set()
+        for tk in tracks:
+            self._trail[tk.id].append(tuple(map(int, tk.center)))
+            self._trail_age[tk.id] = 0
+            seen.add(tk.id)
+        for tid in list(self._trail_age):
+            if tid not in seen:
+                self._trail_age[tid] += 1
+                if self._trail_age[tid] > self.trail_len:
+                    self._trail.pop(tid, None)
+                    self._trail_age.pop(tid, None)
+
+    def _draw_trails(self, img):
+        for tid, pts in self._trail.items():
+            if len(pts) < 2 or self._trail_age.get(tid, 99) > 2:
+                continue
+            col = _color_for_id(tid)
+            cv2.polylines(img, [np.array(pts, np.int32).reshape(-1, 1, 2)],
+                          False, col, 3, cv2.LINE_AA)
+            cv2.circle(img, pts[-1], 5, col, -1)
+            cv2.circle(img, pts[-1], 5, (255, 255, 255), 1, cv2.LINE_AA)
 
     def _extract(self, r, names) -> List[Track]:
         tracks = []
@@ -357,6 +396,8 @@ class VideoAnalytics:
                                   device=self.device, verbose=False)
                 r = res[0]
                 tracks = self._extract(r, model.names)
+                if self.trails:
+                    self._update_trails(tracks)
                 events = []
                 for sol in self.solutions:
                     events.extend(sol.process(tracks, w, h, t))
@@ -364,6 +405,8 @@ class VideoAnalytics:
                 annotated = None
                 if self.annotate:
                     annotated = r.plot()
+                    if self.trails:
+                        self._draw_trails(annotated)
                     for sol in self.solutions:
                         sol.draw(annotated)
                 yield annotated, tracks, events

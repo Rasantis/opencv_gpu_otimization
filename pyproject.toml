@@ -24,6 +24,7 @@ classifiers = [
 # (bindings GStreamer) vêm do SISTEMA — veja a seção de instalação no README.
 dependencies = [
     "numpy>=1.23",
+    "pyyaml>=5.4",        # config declarativa de câmeras (gpuvideo analytics)
 ]
 
 [project.optional-dependencies]

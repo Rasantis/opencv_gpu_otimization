@@ -1,0 +1,22 @@
+# Exemplo: 3 "câmeras", cada uma com SUA solução (1 por câmera), em paralelo.
+# (usam o mesmo vídeo só pra demo; troque source por rtsp://... das suas câmeras)
+#   gpuvideo analytics examples/cameras.yaml --seconds 20
+defaults:
+  model: yolo11n.pt
+  classes: [person]
+  proc_max_side: 960
+  annotate: false          # event-only = FPS cheio (produção)
+
+cameras:
+  - id: entrada
+    source: 15974169_3840_2160_25fps.mp4
+    solution: {type: counting, line: [[0, 0.55], [1, 0.55]], name: fluxo}
+
+  - id: area-restrita
+    source: 15974169_3840_2160_25fps.mp4
+    model: yolo11n.pt
+    solution: {type: intrusion, zone: [[0.02, 0.25], [0.35, 0.25], [0.35, 0.95], [0.02, 0.95]], name: restrito}
+
+  - id: fila-caixa
+    source: 15974169_3840_2160_25fps.mp4
+    solution: {type: dwell, zone: [[0.4, 0.3], [0.95, 0.3], [0.95, 0.95], [0.4, 0.95]], name: fila, alert_s: 6}
