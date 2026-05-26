@@ -126,6 +126,27 @@ Veja [examples/examples.py](examples/examples.py) para mais.
 
 ---
 
+## Demo visual ao vivo
+
+[`examples/visual_demo.py`](examples/visual_demo.py) abre uma janela com o vídeo
+decodificado e um HUD: **FPS ao vivo**, backend atual, resolução e barras de uso
+de **NVDEC / GPU / CPU**. Dá pra **trocar de backend em tempo real** (teclas 1-5)
+e ver o FPS e o uso de CPU mudarem na hora.
+
+![HUD da demo visual](docs/visual_demo.jpg)
+
+```bash
+python3 examples/visual_demo.py video.mp4
+# teclas: 1-5 troca backend | e bordas | g cinza | espaço pausa | q sai
+# sem display? grava um MP4 anotado:
+python3 examples/visual_demo.py video.mp4 --record saida.mp4
+```
+
+> A janela usa `cv2.imshow` (highgui/GTK). A build CUDA precisa de `-DWITH_GTK=ON`
+> (ver [docs/BUILD_CUDA.md](docs/BUILD_CUDA.md)); o `python3-opencv` do apt já tem GTK.
+
+---
+
 ## CLI
 
 Após instalar, o comando `gpuvideo` fica disponível (equivale a `python -m gpuvideo`):

@@ -11,10 +11,13 @@ Python 3.14, OpenCV 4.13.0).
 sudo apt install -y build-essential cmake git pkg-config python3.14-dev \
     nvidia-cuda-toolkit g++-13 \
     libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-    libjpeg-dev libpng-dev libtiff-dev libavcodec-dev libavformat-dev libswscale-dev
+    libjpeg-dev libpng-dev libtiff-dev libavcodec-dev libavformat-dev libswscale-dev \
+    libgtk-3-dev
 ```
 
 > CUDA 12.4 (toolkit do Ubuntu) **exige gcc ≤ 13** — por isso `g++-13`.
+> `libgtk-3-dev` + `-DWITH_GTK=ON` no cmake habilitam `cv2.imshow`/janelas
+> (necessário p/ `examples/visual_demo.py`). Sem isso o highgui fica `GUI: NONE`.
 
 ## 2) Headers do Video Codec SDK (nvcuvid.h / cuviddec.h / nvEncodeAPI.h)
 
@@ -51,7 +54,7 @@ cmake -S opencv-4.13.0 -B build \
   -DWITH_CUDA=ON -DCUDA_ARCH_BIN=8.6 -DCUDA_ARCH_PTX= \
   -DWITH_NVCUVID=ON -DWITH_NVCUVENC=ON -DBUILD_opencv_cudacodec=ON \
   -DCUDA_nvcuvid_LIBRARY=/usr/lib/x86_64-linux-gnu/libnvcuvid.so \
-  -DWITH_GSTREAMER=ON -DWITH_FFMPEG=ON \
+  -DWITH_GSTREAMER=ON -DWITH_FFMPEG=ON -DWITH_GTK=ON \
   -DCMAKE_EXE_LINKER_FLAGS="-Wl,--allow-shlib-undefined" \
   -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--allow-shlib-undefined" \
   -DCMAKE_MODULE_LINKER_FLAGS="-Wl,--allow-shlib-undefined" \
