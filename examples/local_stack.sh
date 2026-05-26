@@ -31,7 +31,11 @@ if [ -n "$SRC" ]; then
   WORKER_IN="$SRC"
 else
   FILE="${1:-}"
-  if [ -n "$FILE" ]; then
+  if [ -n "${WEBCAM:-}" ]; then
+    gst-launch-1.0 -q v4l2src device="$WEBCAM" ! videoconvert ! video/x-raw,format=NV12 ! \
+      timeoverlay ! nvh264enc preset=low-latency-hq rc-mode=cbr bitrate=4000 gop-size=30 bframes=0 ! \
+      h264parse ! flvmux streamable=true ! rtmp2sink location="rtmp://localhost:1935/camera" >/tmp/cam.log 2>&1 & CAM=$!
+  elif [ -n "$FILE" ]; then
     gst-launch-1.0 -q multifilesrc location="$FILE" loop=true ! qtdemux ! h264parse ! nvh264dec ! \
       nvh264enc bitrate=8000 gop-size=30 bframes=0 ! h264parse ! flvmux streamable=true ! \
       rtmp2sink location="rtmp://localhost:1935/camera" >/tmp/cam.log 2>&1 & CAM=$!

@@ -69,6 +69,7 @@ sudo apt install -y python3-opencv gir1.2-gst-plugins-base-1.0 \
 
 ```bash
 pip install "git+https://github.com/Rasantis/opencv_gpu_otimization.git"
+pip install "git+https://github.com/Rasantis/opencv_gpu_otimization.git#egg=gpuvideo[yolo]"  # + YOLO11
 ```
 
 Como o cv2/PyGObject são do sistema, dentro de um venv use
@@ -79,8 +80,18 @@ python3 -m venv --system-site-packages .venv && . .venv/bin/activate
 pip install "git+https://github.com/Rasantis/opencv_gpu_otimization.git"
 ```
 
-Depois é só `import gpuvideo` em qualquer projeto. Veja
-[**Usar nos projetos da empresa**](#usar-nos-projetos-da-empresa).
+**3) Confira o ambiente** (diz exatamente o que falta):
+
+```bash
+gpuvideo doctor
+# ✓ numpy · ✓ OpenCV [FFmpeg/GStreamer/CUDA/cudacodec] · ✓ GStreamer NVDEC/NVENC
+# ✓ GPU NVIDIA · ✓ torch/ultralytics   (✗ vem com o comando de instalação)
+```
+
+`import gpuvideo` funciona só com numpy (imports de gi/cv2 são lazy); se faltar
+uma dep de sistema, o erro **diz o `apt install` certo**. Extras pip:
+`[yolo]` (torch+ultralytics), `[opencv]` (cv2 CPU via pip), `[dev]`.
+Veja [**Usar nos projetos da empresa**](#usar-nos-projetos-da-empresa).
 
 ---
 

@@ -24,11 +24,13 @@ from .frame import Frame
 from .base import BaseStream
 from .gstreamer import GstStream
 from .opencv import CvStream
+from .env import check_environment, DependencyError
 
 __all__ = [
     "Frame", "BaseStream", "GstStream", "CvStream",
     "VideoStream", "make_stream", "MODES", "ALL_MODES",
     "MultiStream", "Benchmark", "BenchmarkResult",
+    "check_environment", "DependencyError",
 ]
 
 __version__ = "0.1.0"

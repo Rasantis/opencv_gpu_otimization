@@ -13,6 +13,11 @@ import sys
 from . import MODES
 
 
+def _cmd_doctor(a):
+    from .env import doctor
+    return doctor()
+
+
 def _cmd_gen(a):
     from .make_test_video import make_test_video
     out = make_test_video(a.output, resolution=a.res, frames=a.frames,
@@ -69,6 +74,9 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="gpuvideo")
     sub = p.add_subparsers(dest="cmd", required=True)
 
+    d = sub.add_parser("doctor", help="checa o ambiente (deps, GStreamer, GPU, YOLO)")
+    d.set_defaults(func=_cmd_doctor)
+
     g = sub.add_parser("gen", help="gera video de teste via NVENC")
     g.add_argument("output")
     g.add_argument("--res", default="1080p")
@@ -117,8 +125,8 @@ def main(argv=None):
     s.set_defaults(func=_cmd_scale)
 
     args = p.parse_args(argv)
-    args.func(args)
-    return 0
+    rc = args.func(args)
+    return rc if isinstance(rc, int) else 0
 
 
 if __name__ == "__main__":

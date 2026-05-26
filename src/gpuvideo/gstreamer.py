@@ -23,7 +23,8 @@ def _ensure_gst():
     with _GST_LOCK:
         if _GST_READY:
             return
-        import gi
+        from .env import require_gi
+        gi = require_gi()
         gi.require_version("Gst", "1.0")
         gi.require_version("GstApp", "1.0")
         gi.require_version("GstVideo", "1.0")

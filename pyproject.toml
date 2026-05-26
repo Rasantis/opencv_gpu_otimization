@@ -30,6 +30,8 @@ dependencies = [
 # Conveniência para quem NÃO tem o OpenCV do sistema e aceita CPU-only
 # (o wheel do PyPI NÃO traz GStreamer nem CUDA; sem opencv-cuda/opencv-gpu).
 opencv = ["opencv-python>=4.8"]
+# Detecção YOLO11 (modo restream --infer e demos): puxa torch + ultralytics.
+yolo = ["ultralytics>=8.3"]
 # Ferramentas de desenvolvimento/benchmark.
 dev = ["build>=1.0", "pytest>=7", "twine>=4"]
 

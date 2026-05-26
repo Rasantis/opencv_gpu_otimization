@@ -39,7 +39,8 @@ class CvStream(BaseStream):
         self._gst_str: Optional[str] = None
 
     def open(self) -> "CvStream":
-        import cv2
+        from .env import require_cv2
+        cv2 = require_cv2()
         self._cv2 = cv2
         if self.mode == "cpu":
             src = self.source if isinstance(self.source, int) else str(self.source)
