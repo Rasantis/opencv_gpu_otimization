@@ -16,11 +16,16 @@ __pycache__/
 *.egg-info/
 src/*.egg-info/
 .venv/
+.venv*/
 venv/
 dist/
 build/
 *.whl
 *.tar.gz
+
+# Modelos YOLO/Ultralytics baixados
+*.pt
+yolo*.pt
 
 # Config local do Claude Code / estado de sessão
 .claude/

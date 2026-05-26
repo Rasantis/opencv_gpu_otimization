@@ -145,6 +145,60 @@ python3 examples/visual_demo.py video.mp4 --record saida.mp4
 > A janela usa `cv2.imshow` (highgui/GTK). A build CUDA precisa de `-DWITH_GTK=ON`
 > (ver [docs/BUILD_CUDA.md](docs/BUILD_CUDA.md)); o `python3-opencv` do apt já tem GTK.
 
+### Mosaico — backends lado a lado
+
+[`examples/mosaic_demo.py`](examples/mosaic_demo.py) roda vários backends **ao
+mesmo tempo**, cada um num tile com FPS próprio — dá pra ver a diferença em
+paralelo, com uma faixa de NVDEC/GPU/CPU global no topo.
+
+![Mosaico de backends](docs/mosaic_demo.jpg)
+
+```bash
+python3 examples/mosaic_demo.py video.mp4                       # todos os backends
+python3 examples/mosaic_demo.py video.mp4 --modes opencv-cpu,opencv-cuda   # 1 a 1
+```
+
+> Rodando **todos juntos**, os backends de GPU disputam o engine NVDEC único →
+> os FPS caem (contenção real). Para medir cada um isolado, use poucos tiles ou
+> o `benchmarks/run_benchmark.py`.
+
+---
+
+## YOLO11 (Ultralytics) — teste de velocidade
+
+[`benchmarks/yolo_speedtest.py`](benchmarks/yolo_speedtest.py) decodifica com o
+gpuvideo e roda **YOLO11 na GPU**, medindo decode/inferência/end-to-end + CPU/GPU.
+Mostra o ganho de decodificar na GPU quando a inferência também está na GPU.
+
+![YOLO11 + gpuvideo](docs/yolo_demo.jpg)
+
+```bash
+# precisa de torch + ultralytics (venv separado recomendado, ver abaixo)
+.venv-yolo/bin/python benchmarks/yolo_speedtest.py video.mp4
+.venv-yolo/bin/python benchmarks/yolo_speedtest.py video.mp4 --record yolo_out.mp4
+```
+
+Resultado em **4K real → YOLO11n @640, RTX 3050** (decode + inferência):
+
+| backend (decode) | e2e fps | infer ms | CPU% | GPU% | NVDEC% |
+|---|---|---|---|---|---|
+| 🥇 **opencv-cuda** | **116** | 4.9 | **9** | 74 | 56 |
+| opencv-cpu | 112 | 5.7 | 34 | 34 | 2 |
+| gstreamer-gpu | 102 | 5.4 | 22 | 46 | 51 |
+
+A inferência YOLO11n roda a ~200 fps na GPU; o end-to-end fica ~116 fps (4.6x o
+realtime). **Decodificar na GPU (`opencv-cuda`) entrega o maior FPS gastando só
+9% de CPU** — decode + inferência na GPU, CPU livre pra lógica/IO.
+
+**Setup do ambiente YOLO** (torch+ultralytics têm wheels p/ Python 3.14):
+
+```bash
+python3 -m venv --system-site-packages .venv-yolo && . .venv-yolo/bin/activate
+pip install ultralytics              # traz torch (CUDA), torchvision...
+pip uninstall -y opencv-python       # usa o cv2-CUDA do sistema (mantém cudacodec)
+pip install -e . --no-deps           # gpuvideo
+```
+
 ---
 
 ## CLI
