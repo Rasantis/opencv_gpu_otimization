@@ -59,6 +59,60 @@ def _ingest_decoded(source) -> str:
     return f'filesrc location="{os.path.abspath(str(source))}" ! {demux} ! {p}{gpu_dec}'
 
 
+class FrameStreamer:
+    """Empurra frames BGR (numpy) p/ RTMP/SRT via appsrc -> NVENC.
+
+    Usado p/ streamar a saída anotada de uma câmera (ex.: overlay de analytics).
+    O pipeline é construído no 1º frame (precisa das dimensões).
+    """
+
+    def __init__(self, out_url, fps=25, codec="h264", bitrate_kbps=4000,
+                 protocol="rtmp", low_latency=True):
+        _ensure_gst()
+        self.out_url = out_url
+        self.fps = fps
+        self.codec = codec
+        self.bitrate = bitrate_kbps
+        self.protocol = protocol
+        self.low_latency = low_latency
+        self._pipe = None
+        self._appsrc = None
+        self._w = self._h = None
+
+    def push(self, bgr):
+        import numpy as np
+        import gi
+        from gi.repository import Gst
+        h, w = bgr.shape[:2]
+        if self._pipe is None:
+            out = (f"appsrc name=src is-live=true do-timestamp=true format=time "
+                   f"caps=video/x-raw,format=BGR,width={w},height={h},framerate={self.fps}/1 ! "
+                   f"queue max-size-buffers=4 leaky=downstream ! videoconvert ! "
+                   f"{_nvenc(self.codec, self.bitrate, 30, self.low_latency)} ! "
+                   f"{_sink(self.protocol, self.out_url, self.codec)}")
+            self._pipe = Gst.parse_launch(out)
+            self._appsrc = self._pipe.get_by_name("src")
+            self._pipe.set_state(Gst.State.PLAYING)
+            self._w, self._h = w, h
+        if (w, h) != (self._w, self._h):
+            import cv2
+            bgr = cv2.resize(bgr, (self._w, self._h))
+        bgr = np.ascontiguousarray(bgr)
+        buf = Gst.Buffer.new_allocate(None, bgr.nbytes, None)
+        buf.fill(0, bgr.tobytes())
+        self._appsrc.emit("push-buffer", buf)
+
+    def close(self):
+        if self._pipe is not None:
+            from gi.repository import Gst
+            try:
+                self._appsrc.emit("end-of-stream")
+            except Exception:
+                pass
+            self._pipe.set_state(Gst.State.NULL)
+            self._pipe = None
+
+
 # --------------------------------- Restreamer ---------------------------------
 class Restreamer:
     def __init__(self, source, out_url: str, *, codec_out: str = "h264",

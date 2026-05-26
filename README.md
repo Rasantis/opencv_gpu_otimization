@@ -271,23 +271,47 @@ Rastreamento mostra o **rastro (trail)** de cada track (ByteTrack), com cor por 
 Uma câmera = uma entrada no YAML (fonte, modelo, solução). O runner sobe todas
 em **paralelo** (1 thread cada) e agrega os eventos por câmera:
 
+Cada câmera escolhe **o que fazer**: exibir janela, salvar eventos (CSV/Excel/
+JSONL) e/ou re-streamar — tudo no YAML:
+
 ```yaml
 # examples/cameras.yaml
-defaults: {model: yolo11n.pt, classes: [person], proc_max_side: 960, annotate: false}
+defaults: {model: yolo11n.pt, classes: [person], proc_max_side: 960}
 cameras:
-  - {id: entrada,  source: rtsp://cam1, solution: {type: counting,  line: [[0,0.55],[1,0.55]]}}
-  - {id: restrito, source: rtsp://cam2, solution: {type: intrusion, zone: [[0,0.25],[0.4,0.25],[0.4,1],[0,1]]}}
-  - {id: fila,     source: rtsp://cam3, model: yolo11s.pt, solution: {type: dwell, zone: [...], alert_s: 8}}
+  - id: entrada                                  # contagem -> Excel, sem janela (FPS cheio)
+    source: rtsp://cam1
+    solution: {type: counting, line: [[0,0.55],[1,0.55]]}
+    events: {format: xlsx, path: relatorios/contagem.xlsx}
+  - id: restrito                                 # invasão -> janela + CSV + STREAM
+    source: rtsp://cam2
+    solution: {type: intrusion, zone: [[0,0.25],[0.4,0.25],[0.4,1],[0,1]]}
+    display: true
+    events: {format: csv, path: relatorios/invasao.csv}
+    stream: rtmp://localhost:1935/restrito       # vê em http://localhost:8889/restrito
+  - id: fila                                     # permanência -> só JSONL
+    source: rtsp://cam3
+    model: yolo11s.pt
+    solution: {type: dwell, zone: [[0.4,0.3],[0.95,0.3],[0.95,0.95],[0.4,0.95]], alert_s: 8}
+    events: {format: jsonl, path: relatorios/fila.jsonl}
 ```
 
+| opção (por câmera) | efeito |
+|---|---|
+| `display: true` | janela em tempo real (anotada) |
+| `events: {format: csv\|xlsx\|jsonl, path}` | salva os eventos (Excel precisa de `[xlsx]`) |
+| `stream: rtmp://...` | re-streama essa câmera (WebRTC/HLS via MediaMTX) |
+| `record: saida.mp4` | grava o vídeo anotado |
+
+> `annotate` liga sozinho quando há display/record/stream; sem nada disso a
+> câmera roda **event-only** (FPS cheio). Anotar/streamar/exibir é opcional **por câmera**.
+
 ```bash
-gpuvideo analytics examples/cameras.yaml --seconds 20
-#  [entrada] [count_in] ...   [restrito] [intrusion] ...   [fila] [dwell_alert] ...
-#  === resumo por câmera ===  entrada 8 fps | restrito 8 fps | fila 8 fps
+gpuvideo analytics examples/cameras.yaml --seconds 20   # --display força janela em todas
+#  [restrito] [intrusion] ...   contagem.xlsx + invasao.csv + fila.jsonl gravados
 ```
-> Validado: 3 câmeras em paralelo, cada uma com sua solução, eventos taggeados
-> por câmera. Cada uma a ~8 fps dividindo uma RTX 3050; pra densidade alta o
-> caminho é **inferência em batch** (1 modelo p/ N câmeras) — [docs/SCALING.md](docs/SCALING.md).
+> Validado: câmeras em paralelo (CSV/Excel/JSONL escritos, stream publicado no
+> MediaMTX), cada uma sua solução. ~8-33 fps/câmera dividindo uma RTX 3050; pra
+> densidade alta o caminho é **inferência em batch** — [docs/SCALING.md](docs/SCALING.md).
 
 **Performance (vídeo 4K real, RTX 3050, YOLO11n+ByteTrack):**
 event-only **~120 fps** · anotado ao vivo **~67 fps** — ambos ≫ os 25 fps da

@@ -33,3 +33,7 @@ yolo*.pt
 # Build do OpenCV (fica fora do projeto, mas por segurança)
 opencv_build/
 build/
+
+# Saídas de analytics (eventos gravados)
+relatorios/
+events/

@@ -33,6 +33,8 @@ dependencies = [
 opencv = ["opencv-python>=4.8"]
 # Detecção YOLO11 (modo restream --infer e demos): puxa torch + ultralytics.
 yolo = ["ultralytics>=8.3"]
+# Salvar eventos em Excel (.xlsx). CSV/JSONL não precisam de nada extra.
+xlsx = ["openpyxl>=3.0"]
 # Ferramentas de desenvolvimento/benchmark.
 dev = ["build>=1.0", "pytest>=7", "twine>=4"]
 

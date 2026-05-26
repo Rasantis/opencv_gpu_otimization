@@ -1,22 +1,30 @@
-# Exemplo: 3 "câmeras", cada uma com SUA solução (1 por câmera), em paralelo.
-# (usam o mesmo vídeo só pra demo; troque source por rtsp://... das suas câmeras)
+# Multi-câmera: cada câmera = uma config (fonte, modelo, solução) + o que fazer
+# com ela: exibir janela, salvar eventos (csv/xlsx/jsonl) e/ou streamar (RTMP->WebRTC).
 #   gpuvideo analytics examples/cameras.yaml --seconds 20
+#   gpuvideo analytics examples/cameras.yaml --display   # força janela p/ todas
 defaults:
   model: yolo11n.pt
   classes: [person]
   proc_max_side: 960
-  annotate: false          # event-only = FPS cheio (produção)
+  # annotate é ligado automaticamente quando há display/record/stream
 
 cameras:
+  # contagem -> salva num EXCEL, sem janela, sem stream (produção, FPS cheio)
   - id: entrada
     source: 15974169_3840_2160_25fps.mp4
     solution: {type: counting, line: [[0, 0.55], [1, 0.55]], name: fluxo}
+    events: {format: xlsx, path: relatorios/contagem.xlsx}
 
+  # invasão -> EXIBE janela ao vivo + salva CSV + STREAMA pro MediaMTX
   - id: area-restrita
     source: 15974169_3840_2160_25fps.mp4
-    model: yolo11n.pt
     solution: {type: intrusion, zone: [[0.02, 0.25], [0.35, 0.25], [0.35, 0.95], [0.02, 0.95]], name: restrito}
+    display: true
+    events: {format: csv, path: relatorios/invasao.csv}
+    stream: rtmp://localhost:1935/area-restrita     # abre em http://localhost:8889/area-restrita
 
+  # permanência -> só eventos em JSONL (sem janela, sem stream)
   - id: fila-caixa
     source: 15974169_3840_2160_25fps.mp4
     solution: {type: dwell, zone: [[0.4, 0.3], [0.95, 0.3], [0.95, 0.95], [0.4, 0.95]], name: fila, alert_s: 6}
+    events: {format: jsonl, path: relatorios/permanencia.jsonl}
