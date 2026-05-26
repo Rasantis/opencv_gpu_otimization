@@ -190,6 +190,21 @@ A inferência YOLO11n roda a ~200 fps na GPU; o end-to-end fica ~116 fps (4.6x o
 realtime). **Decodificar na GPU (`opencv-cuda`) entrega o maior FPS gastando só
 9% de CPU** — decode + inferência na GPU, CPU livre pra lógica/IO.
 
+### Demo ao vivo: detecções YOLO + troca de backend
+
+[`examples/yolo_live_demo.py`](examples/yolo_live_demo.py) junta tudo: janela com
+as **caixas do YOLO11** desenhadas + HUD (FPS, ms de inferência, nº de objetos,
+NVDEC/GPU/CPU) e **troca de backend de decode ao vivo** (teclas 1-5). Dá pra
+ligar/desligar o YOLO (`y`) e ver o custo da inferência, e alternar o modelo
+n/s (`m`).
+
+![YOLO11 ao vivo com HUD](docs/yolo_live_demo.jpg)
+
+```bash
+.venv-yolo/bin/python examples/yolo_live_demo.py video.mp4
+# teclas: 1-5 backend | y liga/desliga YOLO | m modelo n/s | espaço pausa | q sai
+```
+
 **Setup do ambiente YOLO** (torch+ultralytics têm wheels p/ Python 3.14):
 
 ```bash
