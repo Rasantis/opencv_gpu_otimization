@@ -261,6 +261,10 @@ Fontes aceitas: **RTSP, RTMP, SRT, HTTP, arquivo, câmera**. Glass-to-glass
 **Validado localmente**: câmera 4K → MediaMTX → worker (NVDEC→NVENC) → leitura
 em cores a 30 fps; HLS + WebRTC servindo. Detalhes em [docs/DEPLOY.md](docs/DEPLOY.md).
 
+**Escalar pra centenas de câmeras** (multi-modelo, contagem/permanência/heatmap/
+invasão, K8s, batching, TensorRT): roadmap de arquitetura em
+[docs/SCALING.md](docs/SCALING.md).
+
 ---
 
 ## CLI
