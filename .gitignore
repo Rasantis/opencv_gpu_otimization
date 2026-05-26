@@ -10,12 +10,17 @@
 *.h264
 *.h265
 
-# Python
+# Python / packaging
 __pycache__/
 *.py[cod]
 *.egg-info/
+src/*.egg-info/
 .venv/
 venv/
+dist/
+build/
+*.whl
+*.tar.gz
 
 # Config local do Claude Code / estado de sessão
 .claude/

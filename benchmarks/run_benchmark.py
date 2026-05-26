@@ -18,7 +18,8 @@ from gpuvideo.benchmark import Benchmark
 from gpuvideo.transcode import transcode_benchmark
 from gpuvideo.multistream import MultiStream
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+# Raiz do repo (este script vive em benchmarks/); vídeos e results/ ficam lá.
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESULTS = os.path.join(HERE, "results")
 
 

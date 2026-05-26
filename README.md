@@ -8,7 +8,7 @@ NVIDIA (NVDEC para decode, NVENC para encode).
 > Bancada de teste: **NVIDIA RTX 3050 6GB Laptop** (driver 595, CUDA 12.4),
 > CPU de **16 núcleos**, Python 3.14, GStreamer 1.28, e **OpenCV 4.13 único
 > compilado com CUDA + cudacodec + FFmpeg + GStreamer** (instalado em
-> `/usr/local`, `import cv2` já traz tudo) — veja [BUILD_CUDA.md](BUILD_CUDA.md).
+> `/usr/local`, `import cv2` já traz tudo) — veja [docs/BUILD_CUDA.md](docs/BUILD_CUDA.md).
 
 ---
 
@@ -53,14 +53,34 @@ frame inteiro pra CPU — daí os 779 fps.
 
 ## Instalação
 
-Veja [INSTALL.md](INSTALL.md). Resumido:
+`gpuvideo` é um **pacote pip-instalável**. Ele depende de componentes de
+**sistema** (GStreamer + bindings GObject + OpenCV) que não vêm por pip:
+
+**1) Dependências de sistema** (uma vez) — detalhes em [docs/INSTALL.md](docs/INSTALL.md):
 
 ```bash
 sudo apt install -y python3-opencv gir1.2-gst-plugins-base-1.0 \
-                    gir1.2-gst-plugins-bad-1.0 gstreamer1.0-plugins-bad gstreamer1.0-libav
+    gir1.2-gst-plugins-bad-1.0 gstreamer1.0-plugins-bad gstreamer1.0-libav
+```
+> Para o modo `opencv-cuda` (NVDEC nativo), compile o OpenCV com CUDA —
+> [docs/BUILD_CUDA.md](docs/BUILD_CUDA.md).
+
+**2) O pacote** (direto do Git):
+
+```bash
+pip install "git+https://github.com/Rasantis/opencv_gpu_otimization.git"
 ```
 
-Sem `pip`, sem venv — usa os pacotes do sistema.
+Como o cv2/PyGObject são do sistema, dentro de um venv use
+`--system-site-packages` para enxergá-los:
+
+```bash
+python3 -m venv --system-site-packages .venv && . .venv/bin/activate
+pip install "git+https://github.com/Rasantis/opencv_gpu_otimization.git"
+```
+
+Depois é só `import gpuvideo` em qualquer projeto. Veja
+[**Usar nos projetos da empresa**](#usar-nos-projetos-da-empresa).
 
 ---
 
@@ -102,27 +122,31 @@ with GstStream("v.mp4", pipeline=pipe) as s:
     for frame in s: ...
 ```
 
-Veja [examples.py](examples.py) para mais.
+Veja [examples/examples.py](examples/examples.py) para mais.
 
 ---
 
 ## CLI
 
+Após instalar, o comando `gpuvideo` fica disponível (equivale a `python -m gpuvideo`):
+
 ```bash
 # gerar vídeo de teste (codifica na GPU via NVENC)
-python3 -m gpuvideo gen heavy.mp4 --res 1080p --frames 600
+gpuvideo gen heavy.mp4 --res 1080p --frames 600
 
 # benchmark de captura (4 modos)
-python3 -m gpuvideo bench heavy.mp4 --frames 250 --op light --json out.json
+gpuvideo bench heavy.mp4 --frames 250 --op light --json out.json
 
 # transcode GPU vs CPU
-python3 -m gpuvideo transcode heavy.mp4 --preset medium
+gpuvideo transcode heavy.mp4 --preset medium
 
 # escala: 8 streams na GPU
-python3 -m gpuvideo scale heavy.mp4 --n 8 --mode gstreamer-gpu
+gpuvideo scale heavy.mp4 --n 8 --mode gstreamer-gpu
 
-# suíte completa (gera vídeos, roda tudo, salva em ./results/)
-python3 run_benchmark.py
+# suíte completa de benchmark (rode da raiz do repo; salva em ./results/)
+python3 benchmarks/run_benchmark.py
+python3 benchmarks/bench_cuda.py video.mp4 250   # inclui opencv-cuda
+python3 tests/test_codecs.py                       # valida codecs/formatos
 ```
 
 ---
@@ -140,7 +164,7 @@ A matriz é **framework × engine**:
 | **`opencv-cuda`** | OpenCV+CUDA | **GPU (NVDEC nativo)** | `cv2.cudacodec.VideoReader` → GpuMat (cor na GPU) → download |
 
 > `opencv-cuda` exige o OpenCV compilado com CUDA + Video Codec SDK
-> ([BUILD_CUDA.md](BUILD_CUDA.md)). É o **único** caminho em que a conversão de
+> ([docs/BUILD_CUDA.md](docs/BUILD_CUDA.md)). É o **único** caminho em que a conversão de
 > cor fica na GPU e o frame pode ser processado sem sair dela.
 
 ```python
@@ -168,7 +192,7 @@ filesrc ! qtdemux ! h264parse ! nvh264dec ! cudadownload ! videoconvert ! video/
 
 Decode por **NVDEC** (GPU) com fallback **libav/FFmpeg** (CPU). Detecção de codec
 automática (GstDiscoverer) e demuxer por container. Matriz **verificada
-end-to-end** por [`test_codecs.py`](test_codecs.py) — todos os codecs lidos com
+end-to-end** por [`tests/test_codecs.py`](tests/test_codecs.py) — todos os codecs lidos com
 sucesso pelos 5 caminhos (gst-gpu, gst-cpu, opencv-cpu, opencv-gpu, opencv-cuda):
 
 | codec | detecção | NVDEC (GPU) | libav (CPU) | cudacodec |
@@ -187,7 +211,7 @@ RTSP (`rtsp://`), HTTP (`http(s)://`), câmera (índice ou `/dev/videoN`).
 
 > ⚠️ O NVDEC decodifica **4:2:0 8-bit**; conteúdo 4:2:2/4:4:4 não é suportado
 > pelo hardware (cai no fallback de CPU). Confirme no *Support Matrix* da sua GPU.
-> Rode `python3 test_codecs.py` para validar na sua máquina.
+> Rode `python3 tests/test_codecs.py` para validar na sua máquina.
 
 ## Resultados (suíte consolidada)
 
@@ -304,7 +328,7 @@ vence** (tabela 1). O que **não** muda entre rodadas:
 - o **transcode GPU é sempre ~3x** o da CPU;
 - **OpenCV-GPU ≈ GStreamer-GPU** (mesmo NVDEC por baixo).
 
-👉 **Meça no seu hardware e no seu alvo de produção.** Use `run_benchmark.py`.
+👉 **Meça no seu hardware e no seu alvo de produção.** Use `benchmarks/run_benchmark.py`.
 
 ---
 
@@ -334,32 +358,82 @@ roda no NVDEC. Escolha conforme o que é escasso: núcleos ou a GPU.
 
 ---
 
-## Arquitetura
+## Estrutura do repositório
 
 ```
-gpuvideo/
-├── __init__.py        VideoStream, make_stream, MODES  (API de import)
-├── base.py            BaseStream (ABC): open/read/close + iterador + context manager
-├── frame.py           Frame (numpy BGR + metadados)
-├── pipelines.py       detecção de fonte/codec + montagem dos pipelines GStreamer
-├── gstreamer.py       GstStream — NVDEC/libav → appsink → numpy (stride-aware)
-├── opencv.py          CvStream — cv2 FFmpeg (CPU) ou GStreamer NVDEC (GPU)
-├── cudacodec.py       CudaCodecStream — cv2.cudacodec NVDEC nativo → GpuMat
-├── monitor.py         GpuMonitor (nvidia-smi: util/NVDEC/NVENC/mem) + CpuMonitor (/proc)
-├── multistream.py     MultiStream — N streams em paralelo (escala)
-├── benchmark.py       Benchmark + BenchmarkResult (FPS, latência, CPU%, GPU%)
-├── transcode.py       transcode_benchmark — NVDEC+NVENC vs libav+x264
-├── make_test_video.py gerador de vídeos de teste via NVENC
-└── __main__.py        CLI (gen / bench / transcode / scale)
-
-bench_cuda.py          benchmark incluindo opencv-cuda (carrega o cv2 CUDA)
-BUILD_CUDA.md          como compilar o OpenCV com CUDA + cudacodec
+opencv_gpu_otimization/
+├── pyproject.toml        metadata do pacote + deps + entry point `gpuvideo`
+├── LICENSE               MIT
+├── README.md
+├── src/gpuvideo/         ← o pacote importável
+│   ├── __init__.py       VideoStream, make_stream, MODES/ALL_MODES (API pública)
+│   ├── base.py           BaseStream (ABC): open/read/close + iterador + context manager
+│   ├── frame.py          Frame (numpy BGR + metadados)
+│   ├── pipelines.py      detecção de fonte/codec + montagem dos pipelines GStreamer
+│   ├── gstreamer.py      GstStream — NVDEC/libav → appsink → numpy (stride-aware)
+│   ├── opencv.py         CvStream — cv2 FFmpeg (CPU) ou GStreamer NVDEC (GPU)
+│   ├── cudacodec.py      CudaCodecStream — cv2.cudacodec NVDEC nativo → GpuMat
+│   ├── monitor.py        GpuMonitor (nvidia-smi NVDEC/NVENC) + CpuMonitor (/proc)
+│   ├── multistream.py    MultiStream — N streams em paralelo (escala)
+│   ├── benchmark.py      Benchmark + BenchmarkResult (FPS, latência, CPU%, GPU%)
+│   ├── transcode.py      transcode_benchmark — NVDEC+NVENC vs libav+x264
+│   ├── make_test_video.py gerador de vídeos de teste via NVENC
+│   └── __main__.py       CLI (gen / bench / transcode / scale)
+├── examples/examples.py  exemplos de uso da API
+├── benchmarks/           run_benchmark.py · bench_cuda.py · scale_test.py
+├── tests/test_codecs.py  verificação end-to-end de codecs/formatos
+├── docs/                 INSTALL.md · BUILD_CUDA.md
+└── results/              JSONs dos benchmarks
 ```
 
 **Por que é fácil de escalar:** todo backend implementa a mesma interface
 (`BaseStream`), então `make_stream(mode, src)` troca de implementação sem mudar
 seu código; `MultiStream` paraleliza qualquer modo; e como o decode roda em
 C/GStreamer (libera o GIL), as threads escalam de verdade.
+
+## Usar nos projetos da empresa
+
+`gpuvideo` é um pacote normal — adicione como dependência e importe.
+
+**Em outro projeto** (com as deps de sistema já instaladas, ver Instalação):
+
+```bash
+# requirements.txt / pyproject do projeto da empresa:
+gpuvideo @ git+https://github.com/Rasantis/opencv_gpu_otimization.git
+
+# ou fixando uma versão/tag (recomendado em produção):
+gpuvideo @ git+https://github.com/Rasantis/opencv_gpu_otimization.git@v0.1.0
+```
+
+```python
+from gpuvideo import VideoStream, MultiStream
+from gpuvideo.cudacodec import CudaCodecStream, gpu_op_light   # se tiver OpenCV-CUDA
+
+with VideoStream("rtsp://camera/stream") as s:
+    for frame in s:
+        infer(frame.array)          # seu modelo aqui
+```
+
+**Desenvolvimento local** (editável):
+
+```bash
+git clone https://github.com/Rasantis/opencv_gpu_otimization.git
+cd opencv_gpu_otimization
+python3 -m venv --system-site-packages .venv && . .venv/bin/activate
+pip install -e ".[dev]"            # editable + ferramentas (build, pytest)
+```
+
+**Gerar um wheel** para distribuir internamente:
+
+```bash
+python -m build                    # cria dist/gpuvideo-0.1.0-py3-none-any.whl
+pip install dist/gpuvideo-0.1.0-py3-none-any.whl
+```
+
+> **Dependências de sistema** (GStreamer + GObject + OpenCV) não vêm no wheel —
+> garanta-as na imagem/host de destino (ver [docs/INSTALL.md](docs/INSTALL.md)).
+> Para um deploy 100% reproduzível, empacote tudo numa imagem Docker com essas
+> libs + o wheel.
 
 ## Metodologia
 
@@ -376,7 +450,7 @@ C/GStreamer (libera o GIL), as threads escalam de verdade.
   `gstreamer-*` a conversão NV12→BGR sai na CPU. O `opencv-cuda` contorna isso
   (conversão na GPU via NPP) e por isso vence.
 - O `python3-opencv` do apt não tem CUDA. Compilamos o **OpenCV 4.13 com CUDA +
-  FFmpeg + GStreamer** do fonte ([BUILD_CUDA.md](BUILD_CUDA.md)) e instalamos em
+  FFmpeg + GStreamer** do fonte ([docs/BUILD_CUDA.md](docs/BUILD_CUDA.md)) e instalamos em
   `/usr/local` — agora é **um cv2 único** (`import cv2` já traz tudo, sem
   `PYTHONPATH`). Não remove o cv2 do apt; só o sombreia.
 - O FFmpeg do sistema é 8.0 (avcodec 62) e puxa `libsrt` (gcc-15), que referencia

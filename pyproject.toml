@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpuvideo"
+version = "0.1.0"
+description = "Captura e processamento de vídeo acelerados por GPU (NVDEC/NVENC) — OpenCV e GStreamer sob uma API única e fácil de escalar"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Rasantis", email = "rafa25santis@gmail.com" }]
+keywords = ["gpu", "nvdec", "nvenc", "opencv", "gstreamer", "cuda", "video", "cudacodec"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Environment :: GPU :: NVIDIA CUDA",
+    "Operating System :: POSIX :: Linux",
+]
+
+# numpy é a única dependência instalável por pip. cv2 (OpenCV) e PyGObject
+# (bindings GStreamer) vêm do SISTEMA — veja a seção de instalação no README.
+dependencies = [
+    "numpy>=1.23",
+]
+
+[project.optional-dependencies]
+# Conveniência para quem NÃO tem o OpenCV do sistema e aceita CPU-only
+# (o wheel do PyPI NÃO traz GStreamer nem CUDA; sem opencv-cuda/opencv-gpu).
+opencv = ["opencv-python>=4.8"]
+# Ferramentas de desenvolvimento/benchmark.
+dev = ["build>=1.0", "pytest>=7", "twine>=4"]
+
+[project.urls]
+Homepage = "https://github.com/Rasantis/opencv_gpu_otimization"
+Repository = "https://github.com/Rasantis/opencv_gpu_otimization"
+Issues = "https://github.com/Rasantis/opencv_gpu_otimization/issues"
+
+[project.scripts]
+gpuvideo = "gpuvideo.__main__:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -15,12 +15,12 @@ import os
 import sys
 import time
 
-# --- carrega o cv2 com CUDA, se existir, antes de qualquer import de cv2 ---
-_BUILD = "/home/rafael/opencv_build/build"
-for cand in (os.path.join(_BUILD, "python_loader"),
-             os.path.join(_BUILD, "lib", "python3")):
-    if os.path.isdir(cand):
-        sys.path.insert(0, cand)
+# Para o modo opencv-cuda é preciso um OpenCV compilado com CUDA + cudacodec
+# (veja docs/BUILD_CUDA.md). Se você usa o cv2 só do build local (sem instalar),
+# aponte GPUVIDEO_CV2_PATH para o diretório que contém o cv2.*.so.
+_extra = os.environ.get("GPUVIDEO_CV2_PATH")
+if _extra and os.path.isdir(_extra):
+    sys.path.insert(0, _extra)
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
