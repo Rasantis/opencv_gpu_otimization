@@ -273,7 +273,9 @@ class VideoAnalytics:
 
     def __init__(self, source, model="yolo11n.pt", classes: Optional[Sequence[str]] = None,
                  imgsz=640, device="0", tracker="bytetrack.yaml",
-                 backend="gstreamer", engine="gpu", solutions=None):
+                 backend="gstreamer", engine="gpu", solutions=None,
+                 annotate=True, proc_max_side: Optional[int] = None,
+                 decoder="auto"):
         self.source = source
         self.model_name = model
         self.classes = list(classes) if classes else None
@@ -283,6 +285,14 @@ class VideoAnalytics:
         self.backend = backend
         self.engine = engine
         self.solutions: List[Solution] = list(solutions) if solutions else []
+        # annotate=False -> só eventos (produção/bus), sem desenhar = FPS cheio.
+        # proc_max_side -> redimensiona o frame antes de processar (coords são
+        #   normalizadas, então não muda o resultado das soluções; só acelera).
+        self.annotate = annotate
+        self.proc_max_side = proc_max_side
+        # decoder: "auto" usa cudacodec (NVDEC nativo + resize na GPU, baixa só o
+        # frame pequeno -> evita contenção PCIe/CPU do download 4K); senão GStreamer.
+        self.decoder = decoder
 
     def add(self, solution: Solution) -> "VideoAnalytics":
         self.solutions.append(solution)
@@ -306,19 +316,40 @@ class VideoAnalytics:
         """Generator: (frame_anotado, tracks, events) por frame."""
         from ultralytics import YOLO
         from . import VideoStream
+        from .cudacodec import cudacodec_available, CudaCodecStream
         model = YOLO(self.model_name)
         class_ids = None
         if self.classes:
             inv = {v: k for k, v in model.names.items()}
             class_ids = [inv[c] for c in self.classes if c in inv]
 
-        stream = VideoStream(self.source, backend=self.backend, engine=self.engine)
+        # Decoder: cudacodec (resize na GPU, baixa frame pequeno) p/ arquivos.
+        proc = self.proc_max_side
+        use_cuda = (self.decoder in ("auto", "cuda") and cudacodec_available()
+                    and "://" not in str(self.source) and not str(self.source).startswith("/dev/"))
+        if use_cuda:
+            def _gpu_resize(g, _cv2):
+                if not proc:
+                    return g
+                w, h = g.size()
+                if max(w, h) <= proc:
+                    return g
+                sc = proc / max(w, h)
+                return _cv2.cuda.resize(g, (int(w * sc), int(h * sc)))
+            stream = CudaCodecStream(self.source, gpu_op=_gpu_resize, color="BGR")
+        else:
+            stream = VideoStream(self.source, backend=self.backend, engine=self.engine)
         stream.open()
         try:
             for frame in stream:
                 arr = frame.array
                 if arr.ndim == 2:
                     arr = cv2.cvtColor(arr, cv2.COLOR_GRAY2BGR)
+                if proc and not use_cuda:  # CPU resize só se não foi na GPU
+                    H, W = arr.shape[:2]
+                    if max(H, W) > proc:
+                        s = proc / max(H, W)
+                        arr = cv2.resize(arr, (int(W * s), int(H * s)))
                 h, w = arr.shape[:2]
                 t = time.time()
                 res = model.track(arr, persist=True, tracker=self.tracker,
@@ -326,11 +357,15 @@ class VideoAnalytics:
                                   device=self.device, verbose=False)
                 r = res[0]
                 tracks = self._extract(r, model.names)
-                annotated = r.plot()
                 events = []
                 for sol in self.solutions:
                     events.extend(sol.process(tracks, w, h, t))
-                    sol.draw(annotated)
+                # annotate só quando alguém vai ver (custa caro em alta res)
+                annotated = None
+                if self.annotate:
+                    annotated = r.plot()
+                    for sol in self.solutions:
+                        sol.draw(annotated)
                 yield annotated, tracks, events
         finally:
             stream.close()

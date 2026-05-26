@@ -236,17 +236,19 @@ dashboards/alertas. Coords **normalizadas** (0-1) → independentes de resoluç�
 
 ![analytics ao vivo](docs/analytics_demo.jpg)
 
-```python
-from gpuvideo.analytics import VideoAnalytics, LineCounter, IntrusionZone, Heatmap, DwellZone
+Padrão de produção: **uma câmera = uma solução**. `annotate=False` (event-only,
+sem desenhar) + decoder **cudacodec** (resize na GPU, baixa só o frame pequeno)
+→ **sem derrubar FPS**.
 
-va = (VideoAnalytics("rtsp://cam", model="yolo11n.pt", classes=["person"])
-      .add(LineCounter([(0,0.55),(1,0.55)], name="fluxo"))            # contagem IN/OUT
-      .add(DwellZone([(0.6,0.3),(1,0.3),(1,1),(0.6,1)], name="fila", alert_s=5))  # permanência
-      .add(IntrusionZone([(0,0.25),(0.3,0.25),(0.3,1),(0,1)], name="restrito",     # invasão
-                         on_alert=lambda e: print("ALERTA", e)))
-      .add(Heatmap()))                                                 # mapa de calor
-for frame, tracks, events in va.run():
-    for e in events: enviar_para_o_bus(e)   # frame = numpy anotado p/ exibir/restream
+```python
+from gpuvideo.analytics import VideoAnalytics, IntrusionZone
+
+va = VideoAnalytics("rtsp://cam", model="yolo11n.pt", classes=["person"],
+                    annotate=False, proc_max_side=960)   # event-only, processa em 960px
+va.add(IntrusionZone([(0,0.25),(0.3,0.25),(0.3,1),(0,1)], name="restrito",
+                     on_alert=lambda e: enviar_alerta(e)))
+for _frame, tracks, events in va.run():
+    for e in events: enviar_para_o_bus(e)     # só metadados; frame=None p/ economizar
 ```
 
 | solução | classe | evento emitido |
@@ -257,12 +259,16 @@ for frame, tracks, events in va.run():
 | Detecção de invasão | `IntrusionZone` | `intrusion` (+ callback de alerta) |
 
 ```bash
-# demo ao vivo (janela ou --record), com HUD + log de eventos:
-.venv-yolo/bin/python examples/analytics_live.py video.mp4   # ou webcam / rtsp://
+# uma solução por vídeo; --no-annotate = produção (FPS cheio); janela = ao vivo
+.venv-yolo/bin/python examples/analytics_live.py video.mp4 --solution intrusion
+.venv-yolo/bin/python examples/analytics_live.py video.mp4 --solution counting --no-annotate
 ```
-Validado no vídeo de rua: tracking por ID, 14 alertas de invasão, contagem e
-dwell disparando. É a base p/ escalar (multi-modelo/multi-solução) — ver
-[docs/SCALING.md](docs/SCALING.md).
+
+**Performance (vídeo 4K real, RTX 3050, YOLO11n+ByteTrack):**
+event-only **~120 fps** · anotado ao vivo **~67 fps** — ambos ≫ os 25 fps da
+fonte. O segredo é **keep-on-GPU**: NVDEC → resize na GPU → baixa frame pequeno,
+sem o gargalo de transferir o frame 4K inteiro (era ~12 fps quando baixava 4K +
+empilhava soluções). Base p/ escalar — ver [docs/SCALING.md](docs/SCALING.md).
 
 ## Deploy: restreaming em tempo real
 
