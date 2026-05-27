@@ -53,6 +53,10 @@ A arquitetura que escala separa **3 planos**:
    padrão em CUDA no `VideoAnalytics`/`BatchInference` (`half`).
 3. **Desacoplar fps de decode e de inferência** — decodifica a 30 fps, infere a
    5-10 fps (contagem/permanência não precisam de 30). Corte direto de custo.
+   ✅ **Implementado**: `infer_fps` por câmera no YAML. Decode segue cheio (vídeo
+   suave p/ display/gravação/stream), inferência roda na taxa-alvo; frames pulados
+   reusam os últimos tracks. Corte ~ (decode_fps/infer_fps), ex.: 25→5 = 5x menos
+   forwards. Gating por tempo (robusto a fps variável de stream ao vivo).
 4. **Manter o frame na GPU** (o gargalo que medimos): NVDEC → GpuMat → TensorRT
    sem baixar; só os metadados (caixas) descem. Evita o roundtrip de 25 MB/frame.
 5. **Densidade de NVDEC** — escolha a GPU pelo nº de engines de vídeo, não só

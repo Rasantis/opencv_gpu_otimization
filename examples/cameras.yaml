@@ -18,6 +18,11 @@ defaults:
   #   batch: true         # liga o detector compartilhado p/ esta câmera
   #   batch_size: 8       # frames por forward (teto)
   #   batch_wait_ms: 8    # janela p/ acumular o batch (latência vs throughput)
+  # desacople decode/inferência: decodifica a fps cheio (vídeo suave p/ display/
+  # gravação/stream) mas só infere a infer_fps (contagem/dwell/heatmap não precisam
+  # de 30fps). Corte de custo ~ (decode_fps / infer_fps). Frames pulados reusam os
+  # últimos tracks; em modo event-only o frame pulado nem é entregue.
+  #   infer_fps: 5        # inferência alvo (omita = infere todo frame)
 
 cameras:
   # contagem -> salva num EXCEL, sem janela, sem stream (produção, FPS cheio)

@@ -298,7 +298,8 @@ class VideoAnalytics:
                  backend="gstreamer", engine="gpu", solutions=None,
                  annotate=True, proc_max_side: Optional[int] = None,
                  decoder="auto", trails=True, trail_len=30,
-                 reconnect=True, loop=False, half="auto", detector=None):
+                 reconnect=True, loop=False, half="auto", detector=None,
+                 infer_fps=None):
         self.source = source
         self.model_name = model
         self.classes = list(classes) if classes else None
@@ -332,6 +333,10 @@ class VideoAnalytics:
         # detector compartilhado (batch.BatchInference): se informado, a DETECÇÃO
         # roda em batch nesse servidor e o tracking fica aqui (por câmera).
         self.detector = detector
+        # desacopla decode de inferência: decodifica a fps cheio (vídeo suave) mas
+        # infere a infer_fps (ex.: 5). Contagem/dwell/heatmap não precisam de 30fps
+        # -> corte direto de custo. Frames pulados reusam os últimos tracks.
+        self.infer_fps = infer_fps
 
     def add(self, solution: Solution) -> "VideoAnalytics":
         self.solutions.append(solution)
@@ -459,6 +464,11 @@ class VideoAnalytics:
                     backoff = min(backoff * 2, 10)
             return None
 
+        # estado do desacople decode/inferência
+        infer_period = (1.0 / self.infer_fps) if self.infer_fps else 0.0
+        last_infer = 0.0
+        last_tracks: List[Track] = []
+
         stream = _open_retry()
         backoff = 1.0
         try:
@@ -495,25 +505,35 @@ class VideoAnalytics:
                         arr = cv2.resize(arr, (int(W * s), int(H * s)))
                 h, w = arr.shape[:2]
                 t = time.time()
-                if self.detector is None:               # modo standalone: model.track
-                    r = model.track(arr, persist=True, tracker=self.tracker,
-                                    classes=class_ids, imgsz=self.imgsz,
-                                    device=self.device, half=self.half, verbose=False)[0]
-                    tracks = self._extract(r, model.names)
-                    base = r.plot() if self.annotate else None
-                else:                                   # modo batched: detecção compartilhada + tracking local
-                    res = self.detector.infer(arr)
-                    upd = tracker.update(res.boxes.cpu().numpy(), res.orig_img)
-                    tracks = self._extract_from_array(upd, names)
-                    base = None
-                    if self.annotate:
-                        base = arr.copy()
-                        self._draw_tracks(base, tracks)
-                if self.trails:
-                    self._update_trails(tracks)
-                events = []
-                for sol in self.solutions:
-                    events.extend(sol.process(tracks, w, h, t))
+                do_infer = infer_period <= 0 or (t - last_infer) >= infer_period
+                if do_infer:
+                    last_infer = t
+                    if self.detector is None:           # standalone: model.track
+                        r = model.track(arr, persist=True, tracker=self.tracker,
+                                        classes=class_ids, imgsz=self.imgsz,
+                                        device=self.device, half=self.half, verbose=False)[0]
+                        tracks = self._extract(r, model.names)
+                        base = r.plot() if self.annotate else None
+                    else:                               # batched: detecção compartilhada + tracking local
+                        res = self.detector.infer(arr)
+                        upd = tracker.update(res.boxes.cpu().numpy(), res.orig_img)
+                        tracks = self._extract_from_array(upd, names)
+                        base = arr.copy() if self.annotate else None
+                        if base is not None:
+                            self._draw_tracks(base, tracks)
+                    last_tracks = tracks
+                    if self.trails:
+                        self._update_trails(tracks)
+                    events = []
+                    for sol in self.solutions:
+                        events.extend(sol.process(tracks, w, h, t))
+                else:
+                    # frame pulado: analytics só na taxa de inferência; reusa tracks.
+                    tracks, events = last_tracks, []
+                    if not self.annotate:
+                        continue                        # event-only: nada a entregar
+                    base = arr.copy()
+                    self._draw_tracks(base, tracks)
                 annotated = None
                 if self.annotate:
                     annotated = base
