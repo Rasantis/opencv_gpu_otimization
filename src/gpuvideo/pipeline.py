@@ -116,12 +116,13 @@ def build_detectors(cams: List[dict]) -> Dict:
 
 def run_cameras(config_path: str, on_event: Optional[Callable] = None,
                 seconds: Optional[float] = None, force_display=False,
-                base_dir: Optional[str] = None) -> Dict:
+                base_dir: Optional[str] = None, metrics_port: int = 0) -> Dict:
     """Roda as câmeras do YAML em paralelo. Cada câmera pode (via YAML):
        display: true        -> janela em tempo real
        record:  saida.mp4    -> grava o vídeo anotado
        stream:  rtmp://...   -> restreama (WebRTC/HLS via MediaMTX)
        events:  {format: csv|xlsx|jsonl, path: ...}  -> salva os eventos
+       metrics_port>0       -> expõe /metrics (Prometheus) com fps/latência/eventos
     """
     from .sinks import make_sink
     cams = load_config(config_path)
@@ -129,6 +130,12 @@ def run_cameras(config_path: str, on_event: Optional[Callable] = None,
     print(f"Subindo {len(cams)} câmera(s): " +
           ", ".join(f"{c['id']}({(c.get('solution') or {}).get('type','?')})" for c in cams))
     detectors = build_detectors(cams)
+    mx = None
+    if metrics_port:
+        from .metrics import REGISTRY, default_metrics, start_http_server
+        default_metrics(REGISTRY)
+        start_http_server(metrics_port)
+        mx = REGISTRY
     stats: Dict[str, dict] = {}
     latest: Dict[str, object] = {}        # último frame p/ exibir (GUI no main thread)
     lock = threading.Lock()
@@ -142,8 +149,12 @@ def run_cameras(config_path: str, on_event: Optional[Callable] = None,
         streamer = writer = None
         show = force_display or _truthy(cam.get("display"))
         t0 = time.perf_counter()
+        lbl = {"camera": cid}
+        m_t, m_n, m_inf = t0, 0, 0          # janela p/ fps instantâneo das gauges
         try:
             va = build_analytics(cam, force_display, detector=cam.get("_detector"))
+            if mx:
+                mx.set("gpuvideo_camera_up", lbl, 1)
             if cam.get("stream"):
                 from .restream import FrameStreamer
                 url = cam["stream"] if isinstance(cam["stream"], str) else f"rtmp://localhost:1935/{cid}"
@@ -152,6 +163,8 @@ def run_cameras(config_path: str, on_event: Optional[Callable] = None,
                 for e in events:
                     ev += 1
                     sink.write(cid, e)
+                    if mx:
+                        mx.inc("gpuvideo_events_total", {"camera": cid, "type": e.type})
                     if on_event:
                         on_event(cid, e)
                 if frame is not None:
@@ -168,6 +181,23 @@ def run_cameras(config_path: str, on_event: Optional[Callable] = None,
                         with lock:
                             latest[cid] = frame
                 n += 1
+                if mx:
+                    mx.inc("gpuvideo_frames_decoded_total", lbl)
+                    now = time.perf_counter()
+                    if now - m_t >= 1.0:        # gauges instantâneas a cada ~1s
+                        dts = now - m_t
+                        cur_inf = va.stats["inferences"]
+                        det = cam.get("_detector")
+                        mx.set("gpuvideo_decode_fps", lbl, (n - m_n) / dts)
+                        mx.set("gpuvideo_inference_fps", lbl, (cur_inf - m_inf) / dts)
+                        mx.set("gpuvideo_inferences_total", lbl, cur_inf)
+                        mx.set("gpuvideo_inference_latency_ms", lbl, va.stats["infer_ms"])
+                        mx.set("gpuvideo_reconnects_total", lbl, va.stats["reconnects"])
+                        mx.set("gpuvideo_tracks", lbl, len(_tracks))
+                        if det is not None:
+                            mx.set("gpuvideo_batch_size_avg",
+                                   {"model": cam.get("model", "yolo11n.pt")}, det.avg_batch)
+                        m_t, m_n, m_inf = now, n, cur_inf
                 if stop.is_set() or (seconds and time.perf_counter() - t0 > seconds):
                     break
         except Exception as ex:  # noqa: BLE001
@@ -178,6 +208,8 @@ def run_cameras(config_path: str, on_event: Optional[Callable] = None,
                 streamer.close()
             if writer:
                 writer.release()
+            if mx:
+                mx.set("gpuvideo_camera_up", lbl, 0)
         dt = time.perf_counter() - t0
         stats[cid] = {"frames": n, "events": ev, "fps": n / dt if dt else 0}
 

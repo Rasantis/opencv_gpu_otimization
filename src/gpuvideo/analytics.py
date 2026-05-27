@@ -337,6 +337,8 @@ class VideoAnalytics:
         # infere a infer_fps (ex.: 5). Contagem/dwell/heatmap não precisam de 30fps
         # -> corte direto de custo. Frames pulados reusam os últimos tracks.
         self.infer_fps = infer_fps
+        # contadores p/ observabilidade (o runner faz a ponte p/ Prometheus).
+        self.stats = {"inferences": 0, "infer_ms": 0.0, "reconnects": 0}
 
     def add(self, solution: Solution) -> "VideoAnalytics":
         self.solutions.append(solution)
@@ -485,6 +487,7 @@ class VideoAnalytics:
                     except Exception:
                         pass
                     if live and self.reconnect:
+                        self.stats["reconnects"] += 1
                         print(f"[{src}] stream caiu; reconectando em {backoff:.0f}s", flush=True)
                         _sleep(backoff)
                         backoff = min(backoff * 2, 10)
@@ -508,6 +511,7 @@ class VideoAnalytics:
                 do_infer = infer_period <= 0 or (t - last_infer) >= infer_period
                 if do_infer:
                     last_infer = t
+                    _t_inf = time.perf_counter()
                     if self.detector is None:           # standalone: model.track
                         r = model.track(arr, persist=True, tracker=self.tracker,
                                         classes=class_ids, imgsz=self.imgsz,
@@ -521,6 +525,8 @@ class VideoAnalytics:
                         base = arr.copy() if self.annotate else None
                         if base is not None:
                             self._draw_tracks(base, tracks)
+                    self.stats["infer_ms"] = (time.perf_counter() - _t_inf) * 1000
+                    self.stats["inferences"] += 1
                     last_tracks = tracks
                     if self.trails:
                         self._update_trails(tracks)

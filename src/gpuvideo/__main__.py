@@ -20,7 +20,8 @@ def _cmd_doctor(a):
 
 def _cmd_analytics(a):
     from .pipeline import run_cameras
-    run_cameras(a.config, seconds=a.seconds, force_display=a.display)
+    run_cameras(a.config, seconds=a.seconds, force_display=a.display,
+                metrics_port=a.metrics_port)
 
 
 def _cmd_gen(a):
@@ -101,6 +102,8 @@ def main(argv=None):
     an.add_argument("config", help="arquivo YAML de câmeras (ver examples/cameras.yaml)")
     an.add_argument("--seconds", type=float, default=None, help="duração (padrão: até o fim)")
     an.add_argument("--display", action="store_true", help="força janela p/ todas as câmeras")
+    an.add_argument("--metrics-port", type=int, default=0,
+                    help="expõe métricas Prometheus em /metrics nessa porta (ex.: 9108)")
     an.set_defaults(func=_cmd_analytics)
 
     g = sub.add_parser("gen", help="gera video de teste via NVENC")

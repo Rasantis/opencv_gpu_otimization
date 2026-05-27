@@ -156,6 +156,14 @@ e2e, profundidade de fila, util de GPU/NVDEC/NVENC, VRAM, frames dropados,
 eventos/min**. Dashboards Grafana + alertas (câmera caída, fila estourando,
 GPU saturada). Tracing distribuído nos eventos (câmera → detecção → alerta).
 
+✅ **Implementado** (`gpuvideo.metrics`, sem dependências): `gpuvideo analytics
+cams.yaml --metrics-port 9108` expõe `/metrics` (e `/healthz`) com, por câmera:
+`gpuvideo_decode_fps`, `gpuvideo_inference_fps`, `gpuvideo_inference_latency_ms`,
+`gpuvideo_tracks`, `gpuvideo_events_total{type}`, `gpuvideo_reconnects_total`,
+`gpuvideo_camera_up`, e `gpuvideo_batch_size_avg{model}`. Pronto p/ scrape do
+Prometheus e p/ HPA/KEDA escalar por fps/latência/`camera_up`. Falta: util de
+GPU/NVDEC/VRAM (via DCGM-exporter) e dashboards Grafana.
+
 ---
 
 ## 7. Próximos passos no `gpuvideo` (priorizados)

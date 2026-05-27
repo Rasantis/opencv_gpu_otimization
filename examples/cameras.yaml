@@ -2,6 +2,7 @@
 # com ela: exibir janela, salvar eventos (csv/xlsx/jsonl) e/ou streamar (RTMP->WebRTC).
 #   gpuvideo analytics examples/cameras.yaml --seconds 20
 #   gpuvideo analytics examples/cameras.yaml --display   # força janela p/ todas
+#   gpuvideo analytics examples/cameras.yaml --metrics-port 9108  # /metrics (Prometheus)
 defaults:
   model: yolo11n.pt
   classes: [person]

@@ -108,6 +108,30 @@ gpuvideo restream rtsp://CAM srt://127.0.0.1:8890?streamid=publish:cam1 --protoc
 - **Multi-GPU / multi-host**: workers são stateless; orquestre com Kubernetes
   (1 pod por stream, `nvidia.com/gpu` request) apontando todos pro mesmo MediaMTX.
 
+## Observabilidade (Prometheus)
+
+O runner multi-câmera expõe métricas sem dependências extras:
+
+```bash
+gpuvideo analytics cams.yaml --metrics-port 9108   # /metrics e /healthz
+```
+
+Métricas por câmera: `gpuvideo_decode_fps`, `gpuvideo_inference_fps`,
+`gpuvideo_inference_latency_ms`, `gpuvideo_tracks`, `gpuvideo_events_total{type}`,
+`gpuvideo_reconnects_total`, `gpuvideo_camera_up`, `gpuvideo_batch_size_avg{model}`.
+
+Scrape (`prometheus.yml`):
+
+```yaml
+scrape_configs:
+  - job_name: gpuvideo
+    static_configs: [{ targets: ["HOST:9108"] }]
+```
+
+Bons sinais p/ HPA/KEDA e alertas: `camera_up == 0` (câmera caída), `decode_fps`
+caindo (GPU saturada), `inference_latency_ms` subindo, `reconnects_total` crescendo.
+Complete com **DCGM-exporter** (util de GPU/NVDEC/VRAM) e dashboards Grafana.
+
 ## Notas de produção
 
 - `network_mode: host` simplifica o ICE do WebRTC. Atrás de NAT, configure
