@@ -64,7 +64,7 @@ def _truthy(v):
     return bool(v) and v not in ("false", "no", "0", 0)
 
 
-def build_analytics(cam: dict, force_display=False) -> VideoAnalytics:
+def build_analytics(cam: dict, force_display=False, detector=None) -> VideoAnalytics:
     # precisa anotar o frame se for exibir, gravar ou streamar essa câmera
     visual = (force_display or _truthy(cam.get("display")) or
               cam.get("record") or cam.get("stream"))
@@ -79,12 +79,38 @@ def build_analytics(cam: dict, force_display=False) -> VideoAnalytics:
         reconnect=bool(cam.get("reconnect", True)),
         loop=bool(cam.get("loop", False)),
         half=cam.get("half", "auto"),
+        detector=detector,
     )
     if cam.get("solution"):
         va.add(build_solution(cam["solution"]))
     for s in cam.get("solutions", []):     # múltiplas, se quiser
         va.add(build_solution(s))
     return va
+
+
+def build_detectors(cams: List[dict]) -> Dict:
+    """Para as câmeras com batch ligado, cria UM BatchInference por assinatura de
+    inferência (modelo/imgsz/device/classes). Anota cam['_detector'] e devolve os
+    detectores (p/ fechar no fim). Câmeras com mesma assinatura compartilham GPU."""
+    from .batch import BatchInference
+    detectors: Dict[tuple, object] = {}
+    for c in cams:
+        if not _truthy(c.get("batch")):
+            continue
+        key = (c.get("model", "yolo11n.pt"), int(c.get("imgsz", 640)),
+               str(c.get("device", "0")), tuple(c.get("classes") or []))
+        det = detectors.get(key)
+        if det is None:
+            det = detectors[key] = BatchInference(
+                model=key[0], imgsz=key[1], device=key[2],
+                classes=list(key[3]) or None, half=c.get("half", "auto"),
+                max_batch=int(c.get("batch_size", 8)),
+                max_wait_ms=float(c.get("batch_wait_ms", 8)))
+        c["_detector"] = det
+    if detectors:
+        print(f"Batching: {len(detectors)} modelo(s) compartilhado(s) p/ "
+              f"{sum(1 for c in cams if c.get('_detector'))} câmera(s)")
+    return detectors
 
 
 def run_cameras(config_path: str, on_event: Optional[Callable] = None,
@@ -101,6 +127,7 @@ def run_cameras(config_path: str, on_event: Optional[Callable] = None,
     base = base_dir or os.path.dirname(os.path.abspath(config_path)) or "."
     print(f"Subindo {len(cams)} câmera(s): " +
           ", ".join(f"{c['id']}({(c.get('solution') or {}).get('type','?')})" for c in cams))
+    detectors = build_detectors(cams)
     stats: Dict[str, dict] = {}
     latest: Dict[str, object] = {}        # último frame p/ exibir (GUI no main thread)
     lock = threading.Lock()
@@ -115,7 +142,7 @@ def run_cameras(config_path: str, on_event: Optional[Callable] = None,
         show = force_display or _truthy(cam.get("display"))
         t0 = time.perf_counter()
         try:
-            va = build_analytics(cam, force_display)
+            va = build_analytics(cam, force_display, detector=cam.get("_detector"))
             if cam.get("stream"):
                 from .restream import FrameStreamer
                 url = cam["stream"] if isinstance(cam["stream"], str) else f"rtmp://localhost:1935/{cid}"
@@ -181,6 +208,12 @@ def run_cameras(config_path: str, on_event: Optional[Callable] = None,
 
     for th in threads:
         th.join()
+    for det in detectors.values():
+        try:
+            print(f"  [batch] batch médio efetivo: {det.avg_batch:.1f} frames/forward")
+            det.close()
+        except Exception:
+            pass
 
     print("\n=== resumo por câmera ===")
     for cid, s in stats.items():

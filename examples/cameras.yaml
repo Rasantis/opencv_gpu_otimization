@@ -13,6 +13,11 @@ defaults:
   #   loop: false       # true = re-abre arquivos no fim (teste/replay)
   #   half: auto        # FP16 na GPU (auto=on em CUDA). Em deploy, aponte um
   #                     # engine TensorRT: model: yolo11n.engine (ver: gpuvideo export)
+  # batching: câmeras com a MESMA assinatura (model/imgsz/device/classes) podem
+  # dividir UM modelo e rodar a detecção em batch (~2.9x de throughput agregado):
+  #   batch: true         # liga o detector compartilhado p/ esta câmera
+  #   batch_size: 8       # frames por forward (teto)
+  #   batch_wait_ms: 8    # janela p/ acumular o batch (latência vs throughput)
 
 cameras:
   # contagem -> salva num EXCEL, sem janela, sem stream (produção, FPS cheio)

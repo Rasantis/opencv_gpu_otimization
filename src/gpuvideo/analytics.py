@@ -298,7 +298,7 @@ class VideoAnalytics:
                  backend="gstreamer", engine="gpu", solutions=None,
                  annotate=True, proc_max_side: Optional[int] = None,
                  decoder="auto", trails=True, trail_len=30,
-                 reconnect=True, loop=False, half="auto"):
+                 reconnect=True, loop=False, half="auto", detector=None):
         self.source = source
         self.model_name = model
         self.classes = list(classes) if classes else None
@@ -329,6 +329,9 @@ class VideoAnalytics:
         if half == "auto":
             half = str(device).strip().lower() not in ("cpu", "-1")
         self.half = bool(half)
+        # detector compartilhado (batch.BatchInference): se informado, a DETECÇÃO
+        # roda em batch nesse servidor e o tracking fica aqui (por câmera).
+        self.detector = detector
 
     def add(self, solution: Solution) -> "VideoAnalytics":
         self.solutions.append(solution)
@@ -371,21 +374,46 @@ class VideoAnalytics:
                                 tuple(map(float, xyxy[i])), float(conf[i])))
         return tracks
 
+    def _extract_from_array(self, arr, names) -> List[Track]:
+        """tracks do BYTETracker.update: linhas [x1,y1,x2,y2,id,conf,cls,idx]."""
+        tracks = []
+        for row in arr:
+            x1, y1, x2, y2, tid, conf, cls = row[:7]
+            cls = int(cls)
+            tracks.append(Track(int(tid), cls, names[cls],
+                                (float(x1), float(y1), float(x2), float(y2)), float(conf)))
+        return tracks
+
+    def _draw_tracks(self, frame, tracks):
+        """Desenha bbox + id por track (modo batched, em que o Result não traz IDs)."""
+        for tk in tracks:
+            x1, y1, x2, y2 = map(int, tk.bbox)
+            c = _color_for_id(tk.id)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), c, 2)
+            cv2.putText(frame, f"{tk.name} {tk.id}", (x1, max(0, y1 - 6)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, c, 2)
+
     def run(self, should_stop: Optional[Callable[[], bool]] = None):
         """Generator: (frame_anotado, tracks, events) por frame.
 
         Resiliente: fontes ao vivo que caem são reconectadas (backoff); arquivos
         terminam (ou repetem com loop=True). `should_stop()` permite parada limpa.
         """
-        from ultralytics import YOLO
         from . import VideoStream
         from .cudacodec import cudacodec_available, CudaCodecStream
         from .pipelines import classify_source, SourceKind
-        model = YOLO(self.model_name)
-        class_ids = None
-        if self.classes:
-            inv = {v: k for k, v in model.names.items()}
-            class_ids = [inv[c] for c in self.classes if c in inv]
+        model = tracker = class_ids = None
+        if self.detector is None:
+            from ultralytics import YOLO
+            model = YOLO(self.model_name)
+            if self.classes:
+                inv = {v: k for k, v in model.names.items()}
+                class_ids = [inv[c] for c in self.classes if c in inv]
+        else:
+            # detector compartilhado: detecção em batch lá fora, tracking aqui.
+            from .batch import make_tracker
+            tracker = make_tracker(self.tracker)
+            names = self.detector.names
 
         proc = self.proc_max_side
         src = str(self.source)
@@ -467,11 +495,20 @@ class VideoAnalytics:
                         arr = cv2.resize(arr, (int(W * s), int(H * s)))
                 h, w = arr.shape[:2]
                 t = time.time()
-                res = model.track(arr, persist=True, tracker=self.tracker,
-                                  classes=class_ids, imgsz=self.imgsz,
-                                  device=self.device, half=self.half, verbose=False)
-                r = res[0]
-                tracks = self._extract(r, model.names)
+                if self.detector is None:               # modo standalone: model.track
+                    r = model.track(arr, persist=True, tracker=self.tracker,
+                                    classes=class_ids, imgsz=self.imgsz,
+                                    device=self.device, half=self.half, verbose=False)[0]
+                    tracks = self._extract(r, model.names)
+                    base = r.plot() if self.annotate else None
+                else:                                   # modo batched: detecção compartilhada + tracking local
+                    res = self.detector.infer(arr)
+                    upd = tracker.update(res.boxes.cpu().numpy(), res.orig_img)
+                    tracks = self._extract_from_array(upd, names)
+                    base = None
+                    if self.annotate:
+                        base = arr.copy()
+                        self._draw_tracks(base, tracks)
                 if self.trails:
                     self._update_trails(tracks)
                 events = []
@@ -479,7 +516,7 @@ class VideoAnalytics:
                     events.extend(sol.process(tracks, w, h, t))
                 annotated = None
                 if self.annotate:
-                    annotated = r.plot()
+                    annotated = base
                     if self.trails:
                         self._draw_trails(annotated)
                     for sol in self.solutions:

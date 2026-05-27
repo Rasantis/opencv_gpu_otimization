@@ -1,6 +1,6 @@
 """Testes da lógica pura de analytics (sem GPU/cv2/YOLO)."""
 from gpuvideo.analytics import (Track, LineCounter, IntrusionZone, DwellZone,
-                                _point_in_poly, _color_for_id)
+                                VideoAnalytics, _point_in_poly, _color_for_id)
 
 
 def trk(tid, bbox, name="person"):
@@ -63,3 +63,21 @@ def test_dwell_alerta_e_saida():
 def test_color_deterministico():
     assert _color_for_id(1) == _color_for_id(1)
     assert isinstance(_color_for_id(5), tuple) and len(_color_for_id(5)) == 3
+
+
+def test_extract_from_array_modo_batched():
+    # linhas do BYTETracker.update: [x1,y1,x2,y2,id,conf,cls,idx]
+    va = VideoAnalytics("x")
+    rows = [[10, 20, 30, 60, 7, 0.9, 0, 0],
+            [0, 0, 50, 50, 8, 0.8, 2, 1]]
+    tracks = va._extract_from_array(rows, {0: "person", 2: "car"})
+    assert len(tracks) == 2
+    assert tracks[0].id == 7 and tracks[0].name == "person"
+    assert tracks[0].bbox == (10.0, 20.0, 30.0, 60.0)
+    assert tracks[1].id == 8 and tracks[1].cls == 2 and tracks[1].name == "car"
+
+
+def test_videoanalytics_half_auto():
+    assert VideoAnalytics("x", device="0").half is True      # CUDA -> FP16
+    assert VideoAnalytics("x", device="cpu").half is False    # CPU -> FP32
+    assert VideoAnalytics("x", half=False).half is False      # explícito

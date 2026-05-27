@@ -43,8 +43,14 @@ A arquitetura que escala separa **3 planos**:
 
 1. **Inferência em batch entre câmeras** — 2-10x throughput. Triton dynamic
    batching ou DeepStream `nvstreammux` (batch-size = nº de câmeras por GPU).
+   ✅ **Implementado no pacote** (`gpuvideo.batch.BatchInference`): câmeras com a
+   mesma assinatura dividem 1 modelo e a detecção roda em batch (tracking fica por
+   câmera). Ligue com `batch: true` no YAML. Medido: **~2.9x** agregado em 4
+   câmeras (mesmo com a GPU local capada em 30W).
 2. **TensorRT + FP16/INT8** — exporte YOLO11 p/ engine (`model.export(format="engine", half=True)`).
    FP16 ~2x, INT8 ~3-4x sobre PyTorch, com VRAM menor. Calibração INT8 por modelo.
+   ✅ **Implementado**: `gpuvideo export` (engine TensorRT) e FP16 ligado por
+   padrão em CUDA no `VideoAnalytics`/`BatchInference` (`half`).
 3. **Desacoplar fps de decode e de inferência** — decodifica a 30 fps, infere a
    5-10 fps (contagem/permanência não precisam de 30). Corte direto de custo.
 4. **Manter o frame na GPU** (o gargalo que medimos): NVDEC → GpuMat → TensorRT
