@@ -7,6 +7,10 @@ defaults:
   classes: [person]
   proc_max_side: 960
   # annotate é ligado automaticamente quando há display/record/stream
+  # robustez (24/7): fontes ao vivo (rtsp/rtmp) que caem reconectam sozinhas
+  # com backoff. Por câmera você pode ajustar:
+  #   reconnect: true   # (padrão) reconecta fonte ao vivo que cai
+  #   loop: false       # true = re-abre arquivos no fim (teste/replay)
 
 cameras:
   # contagem -> salva num EXCEL, sem janela, sem stream (produção, FPS cheio)

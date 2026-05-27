@@ -76,6 +76,8 @@ def build_analytics(cam: dict, force_display=False) -> VideoAnalytics:
         proc_max_side=cam.get("proc_max_side", 960),
         decoder=cam.get("decoder", "auto"),
         trails=bool(cam.get("trails", True)),
+        reconnect=bool(cam.get("reconnect", True)),
+        loop=bool(cam.get("loop", False)),
     )
     if cam.get("solution"):
         va.add(build_solution(cam["solution"]))
@@ -117,7 +119,7 @@ def run_cameras(config_path: str, on_event: Optional[Callable] = None,
                 from .restream import FrameStreamer
                 url = cam["stream"] if isinstance(cam["stream"], str) else f"rtmp://localhost:1935/{cid}"
                 streamer = FrameStreamer(url, fps=int(cam.get("fps", 25)))
-            for frame, _tracks, events in va.run():
+            for frame, _tracks, events in va.run(should_stop=stop.is_set):
                 for e in events:
                     ev += 1
                     sink.write(cid, e)
@@ -149,6 +151,13 @@ def run_cameras(config_path: str, on_event: Optional[Callable] = None,
                 writer.release()
         dt = time.perf_counter() - t0
         stats[cid] = {"frames": n, "events": ev, "fps": n / dt if dt else 0}
+
+    # Ctrl+C -> parada limpa (só funciona no main thread).
+    import signal
+    try:
+        signal.signal(signal.SIGINT, lambda *_: stop.set())
+    except (ValueError, OSError):
+        pass
 
     threads = [threading.Thread(target=worker, args=(c,), daemon=True) for c in cams]
     for th in threads:

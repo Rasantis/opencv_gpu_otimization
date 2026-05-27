@@ -297,7 +297,8 @@ class VideoAnalytics:
                  imgsz=640, device="0", tracker="bytetrack.yaml",
                  backend="gstreamer", engine="gpu", solutions=None,
                  annotate=True, proc_max_side: Optional[int] = None,
-                 decoder="auto", trails=True, trail_len=30):
+                 decoder="auto", trails=True, trail_len=30,
+                 reconnect=True, loop=False):
         self.source = source
         self.model_name = model
         self.classes = list(classes) if classes else None
@@ -320,6 +321,9 @@ class VideoAnalytics:
         self.trail_len = trail_len
         self._trail = defaultdict(lambda: deque(maxlen=trail_len))
         self._trail_age = {}
+        # robustez: reconectar fontes ao vivo que caem; loop p/ arquivos.
+        self.reconnect = reconnect
+        self.loop = loop
 
     def add(self, solution: Solution) -> "VideoAnalytics":
         self.solutions.append(solution)
@@ -362,40 +366,96 @@ class VideoAnalytics:
                                 tuple(map(float, xyxy[i])), float(conf[i])))
         return tracks
 
-    def run(self):
-        """Generator: (frame_anotado, tracks, events) por frame."""
+    def run(self, should_stop: Optional[Callable[[], bool]] = None):
+        """Generator: (frame_anotado, tracks, events) por frame.
+
+        Resiliente: fontes ao vivo que caem são reconectadas (backoff); arquivos
+        terminam (ou repetem com loop=True). `should_stop()` permite parada limpa.
+        """
         from ultralytics import YOLO
         from . import VideoStream
         from .cudacodec import cudacodec_available, CudaCodecStream
+        from .pipelines import classify_source, SourceKind
         model = YOLO(self.model_name)
         class_ids = None
         if self.classes:
             inv = {v: k for k, v in model.names.items()}
             class_ids = [inv[c] for c in self.classes if c in inv]
 
-        # Decoder: cudacodec (resize na GPU, baixa frame pequeno) p/ arquivos.
         proc = self.proc_max_side
+        src = str(self.source)
+        live = classify_source(self.source) in (SourceKind.RTSP, SourceKind.RTMP,
+                                                SourceKind.HTTP, SourceKind.CAMERA)
         use_cuda = (self.decoder in ("auto", "cuda") and cudacodec_available()
-                    and "://" not in str(self.source) and not str(self.source).startswith("/dev/"))
-        if use_cuda:
-            def _gpu_resize(g, _cv2):
-                if not proc:
-                    return g
-                w, h = g.size()
-                if max(w, h) <= proc:
-                    return g
-                sc = proc / max(w, h)
-                return _cv2.cuda.resize(g, (int(w * sc), int(h * sc)))
-            stream = CudaCodecStream(self.source, gpu_op=_gpu_resize, color="BGR")
-        else:
-            stream = VideoStream(self.source, backend=self.backend, engine=self.engine)
-        stream.open()
+                    and "://" not in src and not src.startswith("/dev/"))
+
+        def _make():
+            if use_cuda:
+                def _gpu_resize(g, _cv2):
+                    if not proc:
+                        return g
+                    w, h = g.size()
+                    if max(w, h) <= proc:
+                        return g
+                    sc = proc / max(w, h)
+                    return _cv2.cuda.resize(g, (int(w * sc), int(h * sc)))
+                return CudaCodecStream(self.source, gpu_op=_gpu_resize, color="BGR")
+            return VideoStream(self.source, backend=self.backend, engine=self.engine)
+
+        def _stopped():
+            return bool(should_stop and should_stop())
+
+        def _sleep(sec):
+            end = time.time() + sec
+            while time.time() < end and not _stopped():
+                time.sleep(0.2)
+
+        def _open_retry():
+            backoff = 1.0
+            while not _stopped():
+                try:
+                    s = _make()
+                    s.open()
+                    return s
+                except Exception as e:  # noqa: BLE001
+                    if not (self.reconnect and live):
+                        raise
+                    print(f"[{src}] open falhou ({type(e).__name__}); retry em {backoff:.0f}s",
+                          flush=True)
+                    _sleep(backoff)
+                    backoff = min(backoff * 2, 10)
+            return None
+
+        stream = _open_retry()
+        backoff = 1.0
         try:
-            for frame in stream:
+            while stream is not None and not _stopped():
+                try:
+                    frame = stream.read()
+                except Exception:  # noqa: BLE001
+                    frame = None
+                if frame is None:
+                    if not live and not self.loop:
+                        break                       # arquivo terminou
+                    try:
+                        stream.close()
+                    except Exception:
+                        pass
+                    if live and self.reconnect:
+                        print(f"[{src}] stream caiu; reconectando em {backoff:.0f}s", flush=True)
+                        _sleep(backoff)
+                        backoff = min(backoff * 2, 10)
+                    elif not live and self.loop:
+                        pass                        # re-abre o arquivo (loop)
+                    else:
+                        break
+                    stream = _open_retry()
+                    continue
+                backoff = 1.0
                 arr = frame.array
                 if arr.ndim == 2:
                     arr = cv2.cvtColor(arr, cv2.COLOR_GRAY2BGR)
-                if proc and not use_cuda:  # CPU resize só se não foi na GPU
+                if proc and not use_cuda:           # CPU resize só se não foi na GPU
                     H, W = arr.shape[:2]
                     if max(H, W) > proc:
                         s = proc / max(H, W)
@@ -412,7 +472,6 @@ class VideoAnalytics:
                 events = []
                 for sol in self.solutions:
                     events.extend(sol.process(tracks, w, h, t))
-                # annotate só quando alguém vai ver (custa caro em alta res)
                 annotated = None
                 if self.annotate:
                     annotated = r.plot()
@@ -422,4 +481,8 @@ class VideoAnalytics:
                         sol.draw(annotated)
                 yield annotated, tracks, events
         finally:
-            stream.close()
+            if stream is not None:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
