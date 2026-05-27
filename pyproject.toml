@@ -46,6 +46,11 @@ Issues = "https://github.com/Rasantis/opencv_gpu_otimization/issues"
 [project.scripts]
 gpuvideo = "gpuvideo.__main__:main"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# test_codecs.py é integração (precisa de GPU/cv2/GStreamer) — fora do unit/CI.
+addopts = "-q --ignore=tests/test_codecs.py"
+
 [tool.setuptools]
 package-dir = { "" = "src" }
 

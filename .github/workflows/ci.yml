@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      # A lógica pura (geometria, soluções, sinks, config, pipelines) não precisa
+      # de cv2/torch/GStreamer — roda em runner limpo.
+      - name: Instalar pacote + ferramentas de teste
+        run: pip install -e ".[dev]" openpyxl
+      - name: Rodar testes unitários
+        run: pytest

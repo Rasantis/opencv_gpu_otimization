@@ -1,5 +1,10 @@
 # gpuvideo — captura/processamento de vídeo OpenCV vs GStreamer (GPU)
 
+[![CI](https://github.com/Rasantis/opencv_gpu_otimization/actions/workflows/ci.yml/badge.svg)](https://github.com/Rasantis/opencv_gpu_otimization/actions/workflows/ci.yml)
+
+> Testes da lógica pura (geometria, soluções, sinks, config, pipelines) rodam
+> sem GPU/cv2: `pip install -e ".[dev]" && pytest`. CI no GitHub Actions (3.10–3.12).
+
 Classes de **captura e processamento de vídeo aceleradas por GPU**, fáceis de
 importar e escalar, mais um **harness de benchmark** que compara, de forma
 justa e honesta, **OpenCV nativo** e **GStreamer** usando ao máximo a sua

@@ -32,9 +32,20 @@ def _color_for_id(i: int):
     """Cor vívida e distinta por track_id (BGR)."""
     return _PALETTE[i % len(_PALETTE)]
 
-from .env import require_cv2
 
-cv2 = require_cv2()
+class _LazyCv2:
+    """Carrega o cv2 só no 1º uso (desenho) — a lógica das soluções é numpy puro,
+    então o módulo importa e roda sem cv2 (testes, headless, event-only)."""
+    _mod = None
+
+    def __getattr__(self, name):
+        if _LazyCv2._mod is None:
+            from .env import require_cv2
+            _LazyCv2._mod = require_cv2()
+        return getattr(_LazyCv2._mod, name)
+
+
+cv2 = _LazyCv2()
 
 Point = Tuple[float, float]
 
