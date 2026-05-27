@@ -24,6 +24,10 @@ defaults:
   # de 30fps). Corte de custo ~ (decode_fps / infer_fps). Frames pulados reusam os
   # últimos tracks; em modo event-only o frame pulado nem é entregue.
   #   infer_fps: 5        # inferência alvo (omita = infere todo frame)
+  # keep-on-GPU: NVDEC -> GpuMat -> tensor torch (cópia GPU->GPU, sem PCIe) -> YOLO.
+  # O frame nunca desce pra CPU (em event-only); só as caixas descem. ~2.7x de
+  # throughput. Requer cudacodec (NVDEC) e detector próprio (não combina com batch).
+  #   keep_on_gpu: true   # arquivo/RTSP suportado pelo NVDEC, sem janela (event-only)
 
 cameras:
   # contagem -> salva num EXCEL, sem janela, sem stream (produção, FPS cheio)

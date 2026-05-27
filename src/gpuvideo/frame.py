@@ -22,6 +22,7 @@ class Frame:
     pts_ns: Optional[int] = None         # presentation timestamp (ns), se houver
     capture_monotonic: float = 0.0       # time.perf_counter() na entrega ao app
     stream_id: str = "0"
+    gpu: object = None                   # GpuMat (keep-on-GPU): frame fica na GPU
 
     @property
     def shape(self) -> tuple:

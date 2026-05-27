@@ -81,3 +81,12 @@ def test_videoanalytics_half_auto():
     assert VideoAnalytics("x", device="0").half is True      # CUDA -> FP16
     assert VideoAnalytics("x", device="cpu").half is False    # CPU -> FP32
     assert VideoAnalytics("x", half=False).half is False      # explícito
+
+
+def test_keep_on_gpu_flag_e_frame_gpu():
+    assert VideoAnalytics("x", keep_on_gpu=True).keep_on_gpu is True
+    assert VideoAnalytics("x").keep_on_gpu is False
+    from gpuvideo.frame import Frame
+    import numpy as np
+    f = Frame(array=np.zeros((2, 2, 3), np.uint8), index=0, width=2, height=2, gpu="GMAT")
+    assert f.gpu == "GMAT"                                    # carrega o GpuMat (keep-on-GPU)

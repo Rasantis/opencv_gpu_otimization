@@ -59,6 +59,11 @@ A arquitetura que escala separa **3 planos**:
    forwards. Gating por tempo (robusto a fps variável de stream ao vivo).
 4. **Manter o frame na GPU** (o gargalo que medimos): NVDEC → GpuMat → TensorRT
    sem baixar; só os metadados (caixas) descem. Evita o roundtrip de 25 MB/frame.
+   ✅ **Implementado**: `keep_on_gpu: true` por câmera. Ponte GpuMat → tensor torch
+   **device-to-device** (`gpuvideo.gpu_bridge`, via `cudaMemcpy2D`, sem cupy) — o
+   frame nunca toca a CPU em event-only; só as caixas descem. Resize preserva
+   aspecto (coords normalizadas intactas). Medido: **~2.7x** (94 vs 35 fps) com
+   contagem **idêntica**, mesmo na GPU local capada em 30W.
 5. **Densidade de NVDEC** — escolha a GPU pelo nº de engines de vídeo, não só
    FLOPs: **L4** (4×NVDEC, 2×NVENC, barata, 72W) >> T4 p/ muitas câmeras.
 6. **ROI / tiling / resolução adaptativa** — processe só a região de interesse e

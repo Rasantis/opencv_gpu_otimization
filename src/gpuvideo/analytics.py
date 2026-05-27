@@ -299,7 +299,7 @@ class VideoAnalytics:
                  annotate=True, proc_max_side: Optional[int] = None,
                  decoder="auto", trails=True, trail_len=30,
                  reconnect=True, loop=False, half="auto", detector=None,
-                 infer_fps=None):
+                 infer_fps=None, keep_on_gpu=False):
         self.source = source
         self.model_name = model
         self.classes = list(classes) if classes else None
@@ -337,6 +337,11 @@ class VideoAnalytics:
         # infere a infer_fps (ex.: 5). Contagem/dwell/heatmap não precisam de 30fps
         # -> corte direto de custo. Frames pulados reusam os últimos tracks.
         self.infer_fps = infer_fps
+        # keep-on-GPU: NVDEC->GpuMat->tensor torch (D2D, sem PCIe)->inferência.
+        # Só as caixas descem; o frame nunca toca a CPU (em modo event-only).
+        # Squash p/ imgsz² preserva coords normalizadas das soluções. Standalone
+        # (detector=None); cudacodec só (arquivo/RTSP suportado pelo NVDEC).
+        self.keep_on_gpu = keep_on_gpu
         # contadores p/ observabilidade (o runner faz a ponte p/ Prometheus).
         self.stats = {"inferences": 0, "infer_ms": 0.0, "reconnects": 0}
 
@@ -410,12 +415,17 @@ class VideoAnalytics:
         from .cudacodec import cudacodec_available, CudaCodecStream
         from .pipelines import classify_source, SourceKind
         model = tracker = class_ids = None
+        kog = self.keep_on_gpu and self.detector is None
         if self.detector is None:
             from ultralytics import YOLO
             model = YOLO(self.model_name)
+            names = model.names
             if self.classes:
                 inv = {v: k for k, v in model.names.items()}
                 class_ids = [inv[c] for c in self.classes if c in inv]
+            if kog:                          # keep-on-GPU usa predict(tensor)+tracker local
+                from .batch import make_tracker
+                tracker = make_tracker(self.tracker)
         else:
             # detector compartilhado: detecção em batch lá fora, tracking aqui.
             from .batch import make_tracker
@@ -426,10 +436,25 @@ class VideoAnalytics:
         src = str(self.source)
         live = classify_source(self.source) in (SourceKind.RTSP, SourceKind.RTMP,
                                                 SourceKind.HTTP, SourceKind.CAMERA)
-        use_cuda = (self.decoder in ("auto", "cuda") and cudacodec_available()
-                    and "://" not in src and not src.startswith("/dev/"))
+        cuda_ok = cudacodec_available() and "://" not in src and not src.startswith("/dev/")
+        use_cuda = self.decoder in ("auto", "cuda") and cuda_ok
+        if kog and not cuda_ok:                  # pediu keep-on-GPU mas sem NVDEC -> cai p/ padrão
+            print(f"[{src}] keep_on_gpu requer cudacodec; usando caminho padrão.", flush=True)
+            kog = False
+        if kog:
+            use_cuda = True
+        imgsz = self.imgsz
 
         def _make():
+            if kog:                              # NVDEC -> GpuMat RGB (fica na GPU)
+                def _gpu_prep(g, _cv2):
+                    rgb = _cv2.cuda.cvtColor(g, _cv2.COLOR_BGRA2RGB) if g.channels() == 4 \
+                        else _cv2.cuda.cvtColor(g, _cv2.COLOR_BGR2RGB)
+                    ow, oh = g.size()           # preserva aspecto; lados múltiplos de 32
+                    th = max(32, int(round(imgsz * oh / ow / 32)) * 32)
+                    return _cv2.cuda.resize(rgb, (imgsz, th))
+                return CudaCodecStream(self.source, gpu_op=_gpu_prep, color="BGRA",
+                                       as_gpumat=True)
             if use_cuda:
                 def _gpu_resize(g, _cv2):
                     if not proc:
@@ -498,21 +523,34 @@ class VideoAnalytics:
                     stream = _open_retry()
                     continue
                 backoff = 1.0
-                arr = frame.array
-                if arr.ndim == 2:
-                    arr = cv2.cvtColor(arr, cv2.COLOR_GRAY2BGR)
-                if proc and not use_cuda:           # CPU resize só se não foi na GPU
-                    H, W = arr.shape[:2]
-                    if max(H, W) > proc:
-                        s = proc / max(H, W)
-                        arr = cv2.resize(arr, (int(W * s), int(H * s)))
-                h, w = arr.shape[:2]
                 t = time.time()
+                if kog:                             # keep-on-GPU: frame fica na GPU
+                    w, h = frame.gpu.size()         # (imgsz, th) já redimensionado na GPU
+                else:
+                    arr = frame.array
+                    if arr.ndim == 2:
+                        arr = cv2.cvtColor(arr, cv2.COLOR_GRAY2BGR)
+                    if proc and not use_cuda:       # CPU resize só se não foi na GPU
+                        H, W = arr.shape[:2]
+                        if max(H, W) > proc:
+                            s = proc / max(H, W)
+                            arr = cv2.resize(arr, (int(W * s), int(H * s)))
+                    h, w = arr.shape[:2]
                 do_infer = infer_period <= 0 or (t - last_infer) >= infer_period
                 if do_infer:
                     last_infer = t
                     _t_inf = time.perf_counter()
-                    if self.detector is None:           # standalone: model.track
+                    if kog:                             # GpuMat -> tensor (D2D) -> predict
+                        from .gpu_bridge import preprocess
+                        tens = preprocess(frame.gpu, half=self.half)
+                        r = model.predict(tens, imgsz=self.imgsz, classes=class_ids,
+                                          device=self.device, half=self.half, verbose=False)[0]
+                        tracks = self._extract_from_array(tracker.update(r.boxes.cpu().numpy(), None), names)
+                        base = None
+                        if self.annotate:              # só aqui o frame (pequeno) desce
+                            base = cv2.cvtColor(frame.gpu.download(), cv2.COLOR_RGB2BGR)
+                            self._draw_tracks(base, tracks)
+                    elif self.detector is None:         # standalone: model.track
                         r = model.track(arr, persist=True, tracker=self.tracker,
                                         classes=class_ids, imgsz=self.imgsz,
                                         device=self.device, half=self.half, verbose=False)[0]
@@ -538,7 +576,8 @@ class VideoAnalytics:
                     tracks, events = last_tracks, []
                     if not self.annotate:
                         continue                        # event-only: nada a entregar
-                    base = arr.copy()
+                    base = (cv2.cvtColor(frame.gpu.download(), cv2.COLOR_RGB2BGR)
+                            if kog else arr.copy())
                     self._draw_tracks(base, tracks)
                 annotated = None
                 if self.annotate:

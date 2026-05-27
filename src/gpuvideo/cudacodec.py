@@ -46,11 +46,13 @@ class CudaCodecStream(BaseStream):
 
     def __init__(self, source, *, gpu_op: Optional[Callable] = None,
                  color: str = "BGR", download: bool = True,
-                 stream_id: str = "0") -> None:
+                 as_gpumat: bool = False, stream_id: str = "0") -> None:
         super().__init__(source, stream_id=stream_id)
         self.gpu_op = gpu_op
         self.color = color
         self.download = download
+        # as_gpumat: entrega o GpuMat em frame.gpu (sem baixar) p/ keep-on-GPU.
+        self.as_gpumat = as_gpumat
         self._reader = None
         self._cv2 = None
 
@@ -99,11 +101,12 @@ class CudaCodecStream(BaseStream):
             gpu_frame = self.gpu_op(gpu_frame, cv2)
         if not self.width:
             self.width, self.height = gpu_frame.size()
-        array = gpu_frame.download() if self.download else None
+        array = None if (self.as_gpumat or not self.download) else gpu_frame.download()
         frame = Frame(
             array=array, index=self._index,
             width=self.width, height=self.height,
             pts_ns=None, capture_monotonic=self._now(), stream_id=self.stream_id,
+            gpu=gpu_frame if self.as_gpumat else None,
         )
         self._index += 1
         return frame

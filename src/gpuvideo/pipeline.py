@@ -81,6 +81,7 @@ def build_analytics(cam: dict, force_display=False, detector=None) -> VideoAnaly
         half=cam.get("half", "auto"),
         detector=detector,
         infer_fps=cam.get("infer_fps"),
+        keep_on_gpu=bool(cam.get("keep_on_gpu", False)),
     )
     if cam.get("solution"):
         va.add(build_solution(cam["solution"]))
