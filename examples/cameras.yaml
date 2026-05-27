@@ -11,6 +11,8 @@ defaults:
   # com backoff. Por câmera você pode ajustar:
   #   reconnect: true   # (padrão) reconecta fonte ao vivo que cai
   #   loop: false       # true = re-abre arquivos no fim (teste/replay)
+  #   half: auto        # FP16 na GPU (auto=on em CUDA). Em deploy, aponte um
+  #                     # engine TensorRT: model: yolo11n.engine (ver: gpuvideo export)
 
 cameras:
   # contagem -> salva num EXCEL, sem janela, sem stream (produção, FPS cheio)

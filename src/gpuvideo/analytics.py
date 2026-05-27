@@ -298,7 +298,7 @@ class VideoAnalytics:
                  backend="gstreamer", engine="gpu", solutions=None,
                  annotate=True, proc_max_side: Optional[int] = None,
                  decoder="auto", trails=True, trail_len=30,
-                 reconnect=True, loop=False):
+                 reconnect=True, loop=False, half="auto"):
         self.source = source
         self.model_name = model
         self.classes = list(classes) if classes else None
@@ -324,6 +324,11 @@ class VideoAnalytics:
         # robustez: reconectar fontes ao vivo que caem; loop p/ arquivos.
         self.reconnect = reconnect
         self.loop = loop
+        # FP16: ~1.3-2x de throughput na GPU, custo ~zero de acurácia. "auto" =
+        # liga em CUDA (device numérico ou "cuda"); CPU sempre FP32.
+        if half == "auto":
+            half = str(device).strip().lower() not in ("cpu", "-1")
+        self.half = bool(half)
 
     def add(self, solution: Solution) -> "VideoAnalytics":
         self.solutions.append(solution)
@@ -464,7 +469,7 @@ class VideoAnalytics:
                 t = time.time()
                 res = model.track(arr, persist=True, tracker=self.tracker,
                                   classes=class_ids, imgsz=self.imgsz,
-                                  device=self.device, verbose=False)
+                                  device=self.device, half=self.half, verbose=False)
                 r = res[0]
                 tracks = self._extract(r, model.names)
                 if self.trails:

@@ -63,6 +63,21 @@ def _cmd_restream(a):
     r.run()
 
 
+def _cmd_export(a):
+    from .optimize import export_engine
+    path = export_engine(a.model, fp16=not a.int8, int8=a.int8, imgsz=a.imgsz,
+                         batch=a.batch, workspace=a.workspace, data=a.data or None,
+                         device=a.device)
+    print("OK ->", path)
+
+
+def _cmd_optbench(a):
+    from .optimize import benchmark_precision
+    print(f"Benchmark de precisão: {a.model} em {a.source}")
+    benchmark_precision(a.model, a.source, frames=a.frames, imgsz=a.imgsz,
+                        device=a.device)
+
+
 def _cmd_scale(a):
     from .multistream import MultiStream
     ms = MultiStream.replicate(a.source, a.n, mode=a.mode)
@@ -127,6 +142,24 @@ def main(argv=None):
     rs.add_argument("--imgsz", type=int, default=640)
     rs.add_argument("--device", default="0")
     rs.set_defaults(func=_cmd_restream)
+
+    ex = sub.add_parser("export", help="exporta YOLO -> engine TensorRT (FP16/INT8, deploy)")
+    ex.add_argument("model", help="modelo .pt (ex.: yolo11n.pt)")
+    ex.add_argument("--int8", action="store_true", help="quantiza INT8 (precisa --data)")
+    ex.add_argument("--data", default="", help="YAML de calibração p/ INT8 (ex.: coco128.yaml)")
+    ex.add_argument("--imgsz", type=int, default=640)
+    ex.add_argument("--batch", type=int, default=1)
+    ex.add_argument("--workspace", type=int, default=4, help="GiB de workspace do builder")
+    ex.add_argument("--device", default="0")
+    ex.set_defaults(func=_cmd_export)
+
+    ob = sub.add_parser("optbench", help="compara FPS de inferência FP32 vs FP16")
+    ob.add_argument("model", help="modelo (.pt ou .engine)")
+    ob.add_argument("source", help="fonte de vídeo p/ alimentar a inferência")
+    ob.add_argument("--frames", type=int, default=150)
+    ob.add_argument("--imgsz", type=int, default=640)
+    ob.add_argument("--device", default="0")
+    ob.set_defaults(func=_cmd_optbench)
 
     s = sub.add_parser("scale", help="teste de escala (N streams)")
     s.add_argument("source")

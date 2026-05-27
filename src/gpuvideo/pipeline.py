@@ -78,6 +78,7 @@ def build_analytics(cam: dict, force_display=False) -> VideoAnalytics:
         trails=bool(cam.get("trails", True)),
         reconnect=bool(cam.get("reconnect", True)),
         loop=bool(cam.get("loop", False)),
+        half=cam.get("half", "auto"),
     )
     if cam.get("solution"):
         va.add(build_solution(cam["solution"]))
