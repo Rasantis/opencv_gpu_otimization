@@ -92,26 +92,33 @@ def build_analytics(cam: dict, force_display=False, detector=None) -> VideoAnaly
 
 def build_detectors(cams: List[dict]) -> Dict:
     """Para as câmeras com batch ligado, cria UM BatchInference por assinatura de
-    inferência (modelo/imgsz/device/classes). Anota cam['_detector'] e devolve os
-    detectores (p/ fechar no fim). Câmeras com mesma assinatura compartilham GPU."""
+    inferência (modelo/imgsz/device/classes/keep_on_gpu). Anota cam['_detector'] e
+    devolve os detectores (p/ fechar no fim). Câmeras com mesma assinatura
+    compartilham GPU. keep_on_gpu+batch = câmeras submetem tensores CUDA (tensor_mode)."""
     from .batch import BatchInference
+    from .cudacodec import cudacodec_available
+    cuda = cudacodec_available()
     detectors: Dict[tuple, object] = {}
     for c in cams:
         if not _truthy(c.get("batch")):
             continue
+        kog = bool(c.get("keep_on_gpu")) and cuda
+        c["keep_on_gpu"] = kog          # normaliza p/ o VideoAnalytics concordar
         key = (c.get("model", "yolo11n.pt"), int(c.get("imgsz", 640)),
-               str(c.get("device", "0")), tuple(c.get("classes") or []))
+               str(c.get("device", "0")), tuple(c.get("classes") or []), kog)
         det = detectors.get(key)
         if det is None:
             det = detectors[key] = BatchInference(
                 model=key[0], imgsz=key[1], device=key[2],
                 classes=list(key[3]) or None, half=c.get("half", "auto"),
                 max_batch=int(c.get("batch_size", 8)),
-                max_wait_ms=float(c.get("batch_wait_ms", 8)))
+                max_wait_ms=float(c.get("batch_wait_ms", 8)), tensor_mode=kog)
         c["_detector"] = det
     if detectors:
+        kg = sum(1 for c in cams if c.get("_detector") and c.get("keep_on_gpu"))
         print(f"Batching: {len(detectors)} modelo(s) compartilhado(s) p/ "
-              f"{sum(1 for c in cams if c.get('_detector'))} câmera(s)")
+              f"{sum(1 for c in cams if c.get('_detector'))} câmera(s)"
+              + (f" ({kg} keep-on-GPU)" if kg else ""))
     return detectors
 
 

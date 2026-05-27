@@ -415,7 +415,7 @@ class VideoAnalytics:
         from .cudacodec import cudacodec_available, CudaCodecStream
         from .pipelines import classify_source, SourceKind
         model = tracker = class_ids = None
-        kog = self.keep_on_gpu and self.detector is None
+        kog = self.keep_on_gpu
         if self.detector is None:
             from ultralytics import YOLO
             model = YOLO(self.model_name)
@@ -423,14 +423,12 @@ class VideoAnalytics:
             if self.classes:
                 inv = {v: k for k, v in model.names.items()}
                 class_ids = [inv[c] for c in self.classes if c in inv]
-            if kog:                          # keep-on-GPU usa predict(tensor)+tracker local
-                from .batch import make_tracker
-                tracker = make_tracker(self.tracker)
         else:
-            # detector compartilhado: detecção em batch lá fora, tracking aqui.
+            names = self.detector.names     # detecção compartilhada (batch)
+        # keep-on-GPU e batched usam tracking local (estado por stream).
+        if kog or self.detector is not None:
             from .batch import make_tracker
             tracker = make_tracker(self.tracker)
-            names = self.detector.names
 
         proc = self.proc_max_side
         src = str(self.source)
@@ -540,11 +538,15 @@ class VideoAnalytics:
                 if do_infer:
                     last_infer = t
                     _t_inf = time.perf_counter()
-                    if kog:                             # GpuMat -> tensor (D2D) -> predict
+                    if kog:                             # GpuMat -> tensor (D2D), sem PCIe
                         from .gpu_bridge import preprocess
-                        tens = preprocess(frame.gpu, half=self.half)
-                        r = model.predict(tens, imgsz=self.imgsz, classes=class_ids,
-                                          device=self.device, half=self.half, verbose=False)[0]
+                        half = self.detector.half if self.detector is not None else self.half
+                        tens = preprocess(frame.gpu, half=half)
+                        if self.detector is not None:   # COMBINADO: tensor -> batcher compartilhado
+                            r = self.detector.infer(tens)
+                        else:                           # standalone keep-on-GPU
+                            r = model.predict(tens, imgsz=self.imgsz, classes=class_ids,
+                                              device=self.device, half=self.half, verbose=False)[0]
                         tracks = self._extract_from_array(tracker.update(r.boxes.cpu().numpy(), None), names)
                         base = None
                         if self.annotate:              # só aqui o frame (pequeno) desce

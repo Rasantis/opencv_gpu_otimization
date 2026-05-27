@@ -64,6 +64,13 @@ A arquitetura que escala separa **3 planos**:
    frame nunca toca a CPU em event-only; só as caixas descem. Resize preserva
    aspecto (coords normalizadas intactas). Medido: **~2.7x** (94 vs 35 fps) com
    contagem **idêntica**, mesmo na GPU local capada em 30W.
+   **Combina com batching** (`keep_on_gpu: true` + `batch: true`): câmeras submetem
+   tensores CUDA e o batcher faz `torch.cat` (agrupando por shape, sem distorção) →
+   1 forward, tudo na GPU. É o pico de eficiência por GPU. Caveat medido: na 3050
+   capada (1 NVDEC, 30W) o combinado NÃO acelera vs batch-numpy — aqui o gargalo é
+   decode (4× 4K num único NVDEC) + compute a 30W, não PCIe (já cortado pelo resize
+   no GPU → ~675 KB/frame). O ganho aparece em GPU PCIe-bound (vários NVDEC, TGP
+   pleno) com muitas câmeras, onde a transferência de frames é o limite real.
 5. **Densidade de NVDEC** — escolha a GPU pelo nº de engines de vídeo, não só
    FLOPs: **L4** (4×NVDEC, 2×NVENC, barata, 72W) >> T4 p/ muitas câmeras.
 6. **ROI / tiling / resolução adaptativa** — processe só a região de interesse e

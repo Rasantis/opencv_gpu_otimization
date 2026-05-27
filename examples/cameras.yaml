@@ -26,8 +26,11 @@ defaults:
   #   infer_fps: 5        # inferência alvo (omita = infere todo frame)
   # keep-on-GPU: NVDEC -> GpuMat -> tensor torch (cópia GPU->GPU, sem PCIe) -> YOLO.
   # O frame nunca desce pra CPU (em event-only); só as caixas descem. ~2.7x de
-  # throughput. Requer cudacodec (NVDEC) e detector próprio (não combina com batch).
+  # throughput em GPU PCIe-bound. Requer cudacodec (NVDEC).
   #   keep_on_gpu: true   # arquivo/RTSP suportado pelo NVDEC, sem janela (event-only)
+  # keep_on_gpu + batch juntos: as câmeras submetem tensores CUDA e o batcher faz
+  # torch.cat (agrupa por shape) -> 1 forward, tudo na GPU. Pico de eficiência por
+  # GPU em frotas grandes/PCIe-bound (em GPU decode/compute-bound o ganho some).
 
 cameras:
   # contagem -> salva num EXCEL, sem janela, sem stream (produção, FPS cheio)

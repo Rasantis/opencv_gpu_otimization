@@ -57,11 +57,14 @@ class BatchInference:
 
     def __init__(self, model: str = "yolo11n.pt", device: str = "0",
                  imgsz: int = 640, half="auto", classes: Optional[Sequence[str]] = None,
-                 max_batch: int = 8, max_wait_ms: float = 8.0):
+                 max_batch: int = 8, max_wait_ms: float = 8.0, tensor_mode: bool = False):
         from ultralytics import YOLO
         self.model = YOLO(model)
         self.device = device
         self.imgsz = imgsz
+        # tensor_mode: câmeras submetem tensores CUDA já pré-processados (keep-on-GPU);
+        # o batcher faz torch.cat (agrupando por shape) -> 1 forward, sem PCIe.
+        self.tensor_mode = tensor_mode
         if half == "auto":
             half = str(device).strip().lower() not in ("cpu", "-1")
         self.half = bool(half)
@@ -110,25 +113,41 @@ class BatchInference:
                 break
         return batch
 
+    def _forward(self, items):
+        """Roda 1 forward p/ um conjunto de itens já homogêneo e devolve os Results."""
+        if self.tensor_mode:
+            import torch
+            x = torch.cat([it[0] for it in items], 0)      # (N,3,H,W) na GPU
+        else:
+            x = [it[0] for it in items]                    # lista de numpy
+        return self.model.predict(x, imgsz=self.imgsz, device=self.device,
+                                  half=self.half, classes=self.class_ids, verbose=False)
+
     def _loop(self):
         while self._running:
             batch = self._drain()
             if not batch:
                 continue
-            frames = [b[0] for b in batch]
-            try:
-                results = self.model.predict(
-                    frames, imgsz=self.imgsz, device=self.device, half=self.half,
-                    classes=self.class_ids, verbose=False)
-                for (f, slot), res in zip(batch, results):
-                    slot.result = res
-                    slot.event.set()
-                self._n_batches += 1
-                self._n_frames += len(batch)
-            except Exception as e:  # noqa: BLE001 — não derruba o batcher
-                for f, slot in batch:
-                    slot.error = e
-                    slot.event.set()
+            # tensor_mode: agrupa por shape (câmeras de mesmo aspecto batcham juntas,
+            # sem distorção); numpy: um grupo só (o predict lida com tamanhos variados).
+            groups = {}
+            if self.tensor_mode:
+                for it in batch:
+                    groups.setdefault(tuple(it[0].shape), []).append(it)
+            else:
+                groups[None] = batch
+            for items in groups.values():
+                try:
+                    results = self._forward(items)
+                    for (f, slot), res in zip(items, results):
+                        slot.result = res
+                        slot.event.set()
+                    self._n_batches += 1
+                    self._n_frames += len(items)
+                except Exception as e:  # noqa: BLE001 — não derruba o batcher
+                    for f, slot in items:
+                        slot.error = e
+                        slot.event.set()
 
     def close(self):
         self._running = False
