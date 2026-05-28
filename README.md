@@ -10,6 +10,13 @@ importar e escalar, mais um **harness de benchmark** que compara, de forma
 justa e honesta, **OpenCV nativo** e **GStreamer** usando ao máximo a sua
 NVIDIA (NVDEC para decode, NVENC para encode).
 
+Sobre essa base, uma **plataforma de video analytics multi-câmera**: YOLO11 +
+ByteTrack, soluções plugáveis (contagem / permanência / heatmap / invasão) por
+config YAML, e as alavancas de escala — **batching** multi-câmera, **keep-on-GPU**,
+desacople **decode/inferência**, **FP16/TensorRT**, **observabilidade Prometheus**,
+reconexão 24/7 e **restreaming** baixa-latência. Veja [Analytics](#analytics-tracking--soluções-contagem--permanência--heatmap--invasão)
+e [Deploy](#deploy-restreaming-em-tempo-real).
+
 > Bancada de teste: **NVIDIA RTX 3050 6GB Laptop** (driver 595, CUDA 12.4),
 > CPU de **16 núcleos**, Python 3.14, GStreamer 1.28, e **OpenCV 4.13 único
 > compilado com CUDA + cudacodec + FFmpeg + GStreamer** (instalado em
@@ -306,6 +313,11 @@ cameras:
 | `events: {format: csv\|xlsx\|jsonl, path}` | salva os eventos (Excel precisa de `[xlsx]`) |
 | `stream: rtmp://...` | re-streama essa câmera (WebRTC/HLS via MediaMTX) |
 | `record: saida.mp4` | grava o vídeo anotado |
+| `batch: true` | divide UM modelo com outras câmeras de mesma assinatura (detecção em batch, ~2.9x) |
+| `infer_fps: 5` | decodifica cheio mas infere a 5/s (corte de custo; contagem/dwell não precisam de 30 fps) |
+| `keep_on_gpu: true` | NVDEC→tensor sem baixar o frame (event-only, ~2.7x); combina com `batch` |
+| `half: auto` | FP16 na GPU (padrão); ou aponte um engine TensorRT: `model: x.engine` |
+| `reconnect: true` | (padrão) fontes ao vivo que caem reconectam com backoff; `loop` re-abre arquivos |
 
 > `annotate` liga sozinho quando há display/record/stream; sem nada disso a
 > câmera roda **event-only** (FPS cheio). Anotar/streamar/exibir é opcional **por câmera**.
@@ -323,6 +335,36 @@ event-only **~120 fps** · anotado ao vivo **~67 fps** — ambos ≫ os 25 fps d
 fonte. O segredo é **keep-on-GPU**: NVDEC → resize na GPU → baixa frame pequeno,
 sem o gargalo de transferir o frame 4K inteiro (era ~12 fps quando baixava 4K +
 empilhava soluções). Base p/ escalar — ver [docs/SCALING.md](docs/SCALING.md).
+
+### Alavancas de otimização (ligadas por câmera no YAML)
+
+Todas implementadas e medidas (mesmo na GPU local capada a 30W; em GPU plena o
+ganho escala). Detalhes e arquitetura em [docs/SCALING.md](docs/SCALING.md).
+
+| alavanca | knob | ganho medido |
+|---|---|---|
+| **Batching multi-câmera** (1 modelo, forward em batch; tracking por câmera) | `batch: true` | **~2.9x** agregado (4 câmeras) |
+| **Desacople decode/inferência** (decode cheio, infere a N fps) | `infer_fps: 5` | corte ~ decode/infer (ex.: 5x) |
+| **Keep-on-GPU** (NVDEC→tensor torch device-to-device, sem PCIe) | `keep_on_gpu: true` | **~2.7x** (contagem idêntica) |
+| **FP16 / TensorRT** (engine via `gpuvideo export`) | `half`, `model: x.engine` | engine **1.45x** o PyTorch |
+| **Reconexão 24/7** (fonte ao vivo cai → backoff; SIGINT limpo) | `reconnect: true` | resiliência |
+
+> Keep-on-GPU **combina com batch** (tensores CUDA concatenados num forward, tudo
+> na GPU). O ganho do combinado depende de a transferência de frames ser o gargalo
+> — em GPU capada/decode-bound ele empata com o batch-numpy; brilha em GPU plena
+> com vários NVDEC. TensorRT precisa de Python ≤3.12 (sem wheel p/ 3.14) — ver
+> `examples/engine_demo.py` e a nota em [docs/SCALING.md](docs/SCALING.md).
+
+### Observabilidade (Prometheus)
+
+```bash
+gpuvideo analytics cameras.yaml --metrics-port 9108   # /metrics e /healthz
+```
+
+Expõe, por câmera (sem dependências extras): `gpuvideo_decode_fps`,
+`gpuvideo_inference_fps`, `gpuvideo_inference_latency_ms`, `gpuvideo_tracks`,
+`gpuvideo_events_total{type}`, `gpuvideo_reconnects_total`, `gpuvideo_camera_up`,
+e `gpuvideo_batch_size_avg{model}` — pronto p/ scrape do Prometheus e HPA/KEDA.
 
 ## Deploy: restreaming em tempo real
 
@@ -380,6 +422,19 @@ gpuvideo transcode heavy.mp4 --preset medium
 
 # escala: 8 streams na GPU
 gpuvideo scale heavy.mp4 --n 8 --mode gstreamer-gpu
+
+# checar o ambiente (deps, GStreamer, GPU, YOLO)
+gpuvideo doctor
+
+# analytics multi-câmera (YAML) + métricas Prometheus
+gpuvideo analytics cameras.yaml --seconds 20 --metrics-port 9108
+
+# exportar engine TensorRT (FP16/INT8) e comparar FP32 vs FP16
+gpuvideo export yolo11n.pt --imgsz 640        # -> yolo11n.engine (precisa de tensorrt)
+gpuvideo optbench yolo11n.pt video.mp4
+
+# restream baixa-latência (NVDEC -> [YOLO] -> NVENC -> RTMP/MediaMTX)
+gpuvideo restream rtsp://cam rtmp://HOST:1935/cam1 --infer
 
 # suíte completa de benchmark (rode da raiz do repo; salva em ./results/)
 python3 benchmarks/run_benchmark.py
@@ -616,7 +671,16 @@ opencv_gpu_otimization/
 │   ├── benchmark.py      Benchmark + BenchmarkResult (FPS, latência, CPU%, GPU%)
 │   ├── transcode.py      transcode_benchmark — NVDEC+NVENC vs libav+x264
 │   ├── make_test_video.py gerador de vídeos de teste via NVENC
-│   └── __main__.py       CLI (gen / bench / transcode / scale)
+│   ├── analytics.py      VideoAnalytics — YOLO11+ByteTrack + soluções; keep_on_gpu, infer_fps, FP16
+│   ├── pipeline.py       config YAML por câmera + runner multi-câmera (+ batching, métricas)
+│   ├── batch.py          BatchInference — detecção em batch compartilhada (numpy ou tensor CUDA)
+│   ├── gpu_bridge.py     ponte GpuMat→tensor torch device-to-device (keep-on-GPU, sem PCIe)
+│   ├── optimize.py       export TensorRT (.engine) + benchmark FP32 vs FP16
+│   ├── metrics.py        exportador Prometheus (/metrics, /healthz) sem dependências
+│   ├── sinks.py          sinks de eventos (CSV/XLSX/JSONL)
+│   ├── restream.py       Restreamer / FrameStreamer — NVENC→RTMP (MediaMTX)
+│   ├── env.py            doctor / require_cv2 / require_gi (erros amigáveis)
+│   └── __main__.py       CLI (doctor/analytics/gen/bench/transcode/restream/scale/export/optbench)
 ├── examples/examples.py  exemplos de uso da API
 ├── benchmarks/           run_benchmark.py · bench_cuda.py · scale_test.py
 ├── tests/test_codecs.py  verificação end-to-end de codecs/formatos
@@ -697,7 +761,11 @@ pip install dist/gpuvideo-0.1.0-py3-none-any.whl
   OpenCV desabilita o FFmpeg.
 - Os headers do Video Codec SDK não vêm no toolkit do Ubuntu; usamos shims sobre
   o `ffnvcodec` (do apt) para ter `nvcuvid.h`/`cuviddec.h` atuais.
-- Laptop com limite de 25W → o NVDEC único não atinge o pico de placas desktop,
-  e há **variância grande** entre execuções (throttling). Meça no seu alvo.
+- **Power limit travado em 30W pelo firmware** (default 80W; `nvidia-smi -pl`
+  bloqueado) → a GPU roda a ~2.4 TFLOPS de ~9, e o NVDEC único não atinge o pico
+  de placas desktop. Há **variância grande** entre execuções (throttling) — só
+  comparações lado a lado na mesma janela são confiáveis. Os ganhos relativos
+  (batch ~2.9x, keep-on-GPU ~2.7x, engine 1.45x) se mantêm; o absoluto é baixo
+  por isso. Meça no seu alvo de produção (GPU plena).
 - `power.draw` do `nvidia-smi` aparece implausível neste driver/placa; não é
   usado como métrica principal.
