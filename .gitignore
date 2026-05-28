@@ -23,9 +23,12 @@ build/
 *.whl
 *.tar.gz
 
-# Modelos YOLO/Ultralytics baixados
+# Modelos YOLO/Ultralytics baixados e artefatos de export
 *.pt
 yolo*.pt
+*.engine
+*.onnx
+.pip_tmp/
 
 # Config local do Claude Code / estado de sessão
 .claude/

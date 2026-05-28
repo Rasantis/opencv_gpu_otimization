@@ -1,0 +1,19 @@
+# Visualização ao vivo: 1 câmera, contagem por linha + rastro do ByteTrack.
+# Abre uma janela GTK (tecla 'q' ou ESC fecha). Em loop p/ repetir o vídeo.
+#   gpuvideo analytics examples/watch.yaml
+# Troque o 'solution' p/ ver outra coisa:
+#   intrusion: {type: intrusion, zone: [[0.02,0.25],[0.45,0.25],[0.45,0.97],[0.02,0.97]], name: restrito}
+#   dwell:     {type: dwell, zone: [[0.4,0.3],[0.95,0.3],[0.95,0.95],[0.4,0.95]], name: fila, alert_s: 5}
+#   heatmap:   {type: heatmap, name: calor}
+defaults:
+  model: yolo11n.pt
+  classes: [person]
+  decoder: cuda
+  proc_max_side: 960
+  trails: true
+  loop: true
+  display: true
+cameras:
+  - id: pessoas
+    source: 15974169_3840_2160_25fps.mp4
+    solution: {type: counting, line: [[0, 0.55], [1, 0.55]], name: fluxo}

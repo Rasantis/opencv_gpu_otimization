@@ -51,6 +51,14 @@ A arquitetura que escala separa **3 planos**:
    FP16 ~2x, INT8 ~3-4x sobre PyTorch, com VRAM menor. Calibração INT8 por modelo.
    ✅ **Implementado**: `gpuvideo export` (engine TensorRT) e FP16 ligado por
    padrão em CUDA no `VideoAnalytics`/`BatchInference` (`half`).
+   Medido (yolo11n, GPU local capada em 30W, batch=1): engine **266 fps** vs
+   PyTorch **183 fps** = **1.45x** — o TensorRT corta o overhead por chamada, então
+   acelera mesmo em batch=1. ⚠️ **TensorRT não tem wheel pra Python 3.14** (e este
+   host é Ubuntu 26.04 / py3.14, casado com a build CUDA do cv2). Workaround usado:
+   `pyenv` p/ compilar Python 3.12 + venv paralelo (`torch cu130`, `ultralytics`,
+   `tensorrt-cu13==10.16` — o 11.0 removeu `EXPLICIT_BATCH` que o ultralytics usa).
+   Demo: `examples/engine_demo.py` (backend opencv/FFmpeg, pois o venv 3.12 não tem
+   cudacodec/GStreamer). Em deploy, use uma imagem com Python ≤3.12 + TensorRT.
 3. **Desacoplar fps de decode e de inferência** — decodifica a 30 fps, infere a
    5-10 fps (contagem/permanência não precisam de 30). Corte direto de custo.
    ✅ **Implementado**: `infer_fps` por câmera no YAML. Decode segue cheio (vídeo
